@@ -25,7 +25,7 @@ defineEmits(['edit'])
     <dl class="success__summary">
       <div>
         <dt>您是</dt>
-        <dd>{{ data.side }}親友・{{ data.relation }}</dd>
+        <dd>{{ data.side }}親友</dd>
       </div>
       <div>
         <dt>是否出席</dt>
@@ -43,6 +43,10 @@ defineEmits(['edit'])
         <div>
           <dt>兒童椅</dt>
           <dd>{{ data.childSeats }} 張</dd>
+        </div>
+        <div>
+          <dt>飲食禁忌或過敏</dt>
+          <dd>{{ data.dietary || '沒有' }}</dd>
         </div>
       </template>
     </dl>

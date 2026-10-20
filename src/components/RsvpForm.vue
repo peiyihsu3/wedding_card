@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import NumberStepper from './NumberStepper.vue'
-import { maxGuests, relationOptions } from '../config.js'
+import { maxGuests } from '../config.js'
 import { isMockMode, submitRsvp } from '../api/rsvp.js'
 
 const props = defineProps({
@@ -21,19 +21,25 @@ const attendingOptions = [
   { value: 'no', label: '無法出席' },
 ]
 
+const dietaryOptions = [
+  { value: 'no', label: '沒有' },
+  { value: 'yes', label: '有' },
+]
+
 // 錯誤時依此順序找第一個要捲動到的欄位
-const FIELD_ORDER = ['name', 'phone', 'side', 'relation', 'attending']
+const FIELD_ORDER = ['name', 'phone', 'side', 'attending', 'dietaryNote']
 const PHONE_RE = /^09\d{8}$/
 
 const form = reactive({
   name: '',
   phone: '',
   side: '',
-  relation: '',
   attending: '',
   guests: 1,
   vegetarian: 0,
   childSeats: 0,
+  hasDietary: 'no',
+  dietaryNote: '',
   website: '', // honeypot，真人看不到
   ...props.initial,
 })
@@ -45,6 +51,7 @@ const submitError = ref('')
 
 const normalizedPhone = computed(() => form.phone.replace(/[\s-]/g, ''))
 const isAttending = computed(() => form.attending === 'yes')
+const hasDietary = computed(() => isAttending.value && form.hasDietary === 'yes')
 
 const errors = computed(() => {
   const e = {}
@@ -52,8 +59,8 @@ const errors = computed(() => {
   if (!normalizedPhone.value) e.phone = '請填寫手機號碼'
   else if (!PHONE_RE.test(normalizedPhone.value)) e.phone = '手機號碼為 09 開頭共 10 碼'
   if (!form.side) e.side = '請選擇男方或女方親友'
-  if (!form.relation) e.relation = '請選擇關係'
   if (!form.attending) e.attending = '請選擇是否出席'
+  if (hasDietary.value && !form.dietaryNote.trim()) e.dietaryNote = '請填寫飲食禁忌或過敏的內容'
   return e
 })
 
@@ -95,11 +102,11 @@ async function onSubmit() {
     name: form.name.trim(),
     phone: normalizedPhone.value,
     side: form.side,
-    relation: form.relation,
     attending,
     guests: attending ? form.guests : 0,
     vegetarian: attending ? form.vegetarian : 0,
     childSeats: attending ? form.childSeats : 0,
+    dietary: hasDietary.value ? form.dietaryNote.trim() : '',
     website: form.website,
   }
 
@@ -169,22 +176,6 @@ async function onSubmit() {
       <p v-if="errorOf('side')" class="field__error">{{ errorOf('side') }}</p>
     </fieldset>
 
-    <div id="field-relation" class="field">
-      <label class="field__label" for="relation">關係 <span class="req">*</span></label>
-      <select
-        id="relation"
-        v-model="form.relation"
-        class="input select"
-        :class="{ 'is-invalid': errorOf('relation'), 'is-placeholder': !form.relation }"
-        :aria-invalid="Boolean(errorOf('relation'))"
-        @blur="touched.relation = true"
-      >
-        <option value="" disabled>請選擇</option>
-        <option v-for="opt in relationOptions" :key="opt" :value="opt">{{ opt }}</option>
-      </select>
-      <p v-if="errorOf('relation')" class="field__error">{{ errorOf('relation') }}</p>
-    </div>
-
     <fieldset id="field-attending" class="field">
       <legend class="field__label">是否出席 <span class="req">*</span></legend>
       <div class="pills">
@@ -197,29 +188,61 @@ async function onSubmit() {
     </fieldset>
 
     <Transition name="reveal">
-      <div v-if="isAttending" class="row row--3 rsvp__counts">
-        <div class="field">
-          <span id="guests-label" class="field__label">出席人數（含本人）</span>
-          <NumberStepper v-model="form.guests" :min="1" :max="maxGuests" labelledby="guests-label" />
+      <div v-if="isAttending" class="rsvp__attending">
+        <div class="row row--3">
+          <div class="field">
+            <span id="guests-label" class="field__label">出席人數（含本人）</span>
+            <NumberStepper v-model="form.guests" :min="1" :max="maxGuests" labelledby="guests-label" />
+          </div>
+          <div class="field">
+            <span id="vegetarian-label" class="field__label">素食人數</span>
+            <NumberStepper
+              v-model="form.vegetarian"
+              :min="0"
+              :max="form.guests"
+              labelledby="vegetarian-label"
+            />
+          </div>
+          <div class="field">
+            <span id="child-seats-label" class="field__label">兒童椅</span>
+            <NumberStepper
+              v-model="form.childSeats"
+              :min="0"
+              :max="form.guests"
+              labelledby="child-seats-label"
+            />
+          </div>
         </div>
-        <div class="field">
-          <span id="vegetarian-label" class="field__label">素食人數</span>
-          <NumberStepper
-            v-model="form.vegetarian"
-            :min="0"
-            :max="form.guests"
-            labelledby="vegetarian-label"
-          />
-        </div>
-        <div class="field">
-          <span id="child-seats-label" class="field__label">兒童椅</span>
-          <NumberStepper
-            v-model="form.childSeats"
-            :min="0"
-            :max="form.guests"
-            labelledby="child-seats-label"
-          />
-        </div>
+
+        <fieldset class="field">
+          <legend class="field__label">是否有飲食禁忌或過敏</legend>
+          <div class="pills">
+            <label v-for="opt in dietaryOptions" :key="opt.value" class="pill">
+              <input v-model="form.hasDietary" type="radio" name="hasDietary" :value="opt.value" />
+              <span>{{ opt.label }}</span>
+            </label>
+          </div>
+          <Transition name="reveal">
+            <div v-if="hasDietary" id="field-dietaryNote" class="rsvp__dietary-note">
+              <input
+                id="dietaryNote"
+                v-model="form.dietaryNote"
+                class="input"
+                :class="{ 'is-invalid': errorOf('dietaryNote') }"
+                type="text"
+                maxlength="100"
+                placeholder="例如：不吃牛、海鮮過敏"
+                aria-label="飲食禁忌或過敏的內容"
+                :aria-invalid="Boolean(errorOf('dietaryNote'))"
+                aria-describedby="dietaryNote-error"
+                @blur="touched.dietaryNote = true"
+              />
+              <p v-if="errorOf('dietaryNote')" id="dietaryNote-error" class="field__error">
+                {{ errorOf('dietaryNote') }}
+              </p>
+            </div>
+          </Transition>
+        </fieldset>
       </div>
     </Transition>
 
@@ -307,23 +330,6 @@ async function onSubmit() {
   border-color: var(--danger);
 }
 
-.select {
-  appearance: none;
-  padding-right: 40px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23b76e79' stroke-width='1.6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 16px center;
-  cursor: pointer;
-}
-
-.select.is-placeholder {
-  color: #b8aca4;
-}
-
-.select option {
-  color: var(--text);
-}
-
 /* 膠囊式單選按鈕 */
 .pills {
   display: grid;
@@ -373,11 +379,15 @@ async function onSubmit() {
   outline-offset: 2px;
 }
 
-.rsvp__counts {
+.rsvp__attending {
   padding: 20px 16px 0;
   margin-bottom: 20px;
   border-radius: var(--radius);
   background: var(--cream);
+}
+
+.rsvp__dietary-note {
+  margin-top: 12px;
 }
 
 .reveal-enter-active,
