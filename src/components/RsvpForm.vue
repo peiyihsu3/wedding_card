@@ -1,7 +1,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import NumberStepper from './NumberStepper.vue'
-import { maxGuests } from '../config.js'
+import { maxGuests, wedding } from '../config.js'
 import { isMockMode, submitRsvp } from '../api/rsvp.js'
 
 const props = defineProps({
@@ -126,6 +126,7 @@ async function onSubmit() {
   <form class="card rsvp" novalidate @submit.prevent="onSubmit">
     <h2 class="rsvp__title">出席回覆</h2>
     <p class="rsvp__subtitle">請協助填寫以下資訊，方便我們安排座位</p>
+    <p class="rsvp__deadline">請於 {{ wedding.rsvpDeadline }} 前回覆</p>
 
     <div class="row row--2">
       <div id="field-name" class="field">
@@ -268,10 +269,20 @@ async function onSubmit() {
 }
 
 .rsvp__subtitle {
-  margin: 8px 0 28px;
+  margin: 8px 0 0;
   color: var(--text-muted);
   font-size: 14px;
   text-align: center;
+}
+
+.rsvp__deadline {
+  width: fit-content;
+  margin: 16px auto 28px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  background: var(--rose-gold-soft);
+  color: var(--rose-gold-deep);
+  font-size: 14px;
 }
 
 .row {

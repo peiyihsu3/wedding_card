@@ -3,11 +3,16 @@ export const wedding = {
   groom: '李彥呈',
   bride: '徐珮宜',
   date: '2027 年 1 月 31 日（日）',
+  // 首屏的大字日期，格式 YYYY-MM-DD
+  dateISO: '27-01-31',
   time: '中午 12:00 入席、中午 12:30 開席',
   venue: '大倉久和大飯店',
   address: '台北市中山區南京東路一段9號',
   // 地圖連結，不需要可留空字串
   mapUrl: '',
+  // 交通區塊的 Google 地圖嵌入網址（iframe 的 src）
+  mapEmbedUrl:
+    'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3614.4564379972567!2d121.52069907544704!3d25.052514337545585!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3442a968d1b7225f%3A0x202a37ce7ae7400c!2sThe%20Okura%20Prestige%20Taipei!5e0!3m2!1sen!2stw!4v1792502576262!5m2!1sen!2stw',
   rsvpDeadline: '2027 年 11 月 15 日',
   greeting: '誠摯邀請您來參加我們的婚禮，分享這份喜悅。',
 }

@@ -37,7 +37,9 @@ import { wedding } from '../config.js'
       </div>
     </dl>
 
-    <p class="hero__deadline">請於 {{ wedding.rsvpDeadline }} 前回覆</p>
+    <div class="hero__cta">
+      <a class="btn" href="#rsvp">立即回覆</a>
+    </div>
   </header>
 </template>
 
@@ -100,14 +102,8 @@ import { wedding } from '../config.js'
   text-underline-offset: 3px;
 }
 
-.hero__deadline {
-  display: inline-block;
-  margin: 24px 0 0;
-  padding: 6px 16px;
-  border-radius: 999px;
-  background: var(--rose-gold-soft);
-  color: var(--rose-gold-deep);
-  font-size: 14px;
+.hero__cta {
+  margin-top: 24px;
 }
 
 @media (min-width: 768px) {
@@ -122,17 +118,8 @@ import { wedding } from '../config.js'
 }
 
 @media (min-width: 1024px) {
-  .hero {
-    padding-top: 48px;
-  }
-
   .hero__names {
     font-size: 44px;
-  }
-
-  .hero__amp {
-    display: block;
-    margin: 4px 0;
   }
 }
 </style>
