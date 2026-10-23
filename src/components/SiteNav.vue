@@ -18,13 +18,13 @@ const icons = {
 }
 
 /*
- * 手機上的紙條：上緣的撕紙邊。起伏比婚紗那張紙明顯（約 200px 一個波，加一道短的打亂規律），
- * 撕口的小塊和毛邊調淡，紙邊才是緩緩起伏，不會碎碎的。TEAR 是撕進去最深多少
+ * 手機上的紙條：上緣的撕紙邊。接近水平，只微微起伏（約 200px 一個波，加一道短的打亂規律），
+ * 撕口的小塊和毛邊調淡，紙邊才不會碎碎的。TEAR 是撕進去最深多少
  */
-const TEAR = 8
+const TEAR = 4
 const TEAR_EDGE = {
   waves: [
-    [32, 0.65],
+    [32, 0.4],
     [10, 0.1],
   ],
   rough: 0.3,
@@ -207,8 +207,8 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   color: var(--nav-text);
   transition: color 0.3s;
-  /* 字跟著螢幕寬度放大：寬度 320 的手機 15px，一般手機約 18px */
-  font-size: clamp(15px, 4.6vw, 18px);
+  /* 字跟著螢幕寬度放大：寬度 320 的手機 14px，一般手機約 16px */
+  font-size: clamp(14px, 4.1vw, 16px);
   font-weight: 600;
   letter-spacing: 0.15em;
   white-space: nowrap;
@@ -226,21 +226,23 @@ onBeforeUnmount(() => {
 
 /*
  * 字距會在最後一個字後面多出一段空白，收回來文字才會置中。
- * 手機上目前那一項的字放大一些；用縮放不改字級，旁邊的字才不會被擠動。從字的中間放大（扣掉最後一個字後面的字距）
+ * 手機上換到目前那一項時，字放大一下再縮回原本的大小，像跳一下；停下來的字跟其他項目一樣大。
+ * 用縮放不改字級，旁邊的字才不會被擠動；從字的中間放大（扣掉最後一個字後面的字距）
  */
 .quick-nav__label {
   margin-right: -0.15em;
   transform-origin: calc(50% - 0.075em) 50%;
 }
 
-.quick-nav__btn.is-active .quick-nav__label {
-  transform: scale(1.15);
+@media (prefers-reduced-motion: no-preference) {
+  .quick-nav__btn.is-active .quick-nav__label {
+    animation: nav-pop 0.45s ease-out;
+  }
 }
 
-/* 換到這一項時字先放大過頭一點再彈回來，像跳出來 */
-@media (prefers-reduced-motion: no-preference) {
-  .quick-nav__label {
-    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+@keyframes nav-pop {
+  40% {
+    transform: scale(1.2);
   }
 }
 
@@ -306,11 +308,11 @@ onBeforeUnmount(() => {
     --crayon-stroke: 2.6;
   }
 
-  /* 平板的字在框裡，放大會撐出框，目前那一項改用黃色厚邊標示 */
+  /* 平板的字在框裡，放大會撐出框，目前那一項只用黃色厚邊標示 */
   .quick-nav__label,
   .quick-nav__btn.is-active .quick-nav__label {
     margin-right: -0.2em;
-    transform: none;
+    animation: none;
   }
 
   .quick-nav__icon {
