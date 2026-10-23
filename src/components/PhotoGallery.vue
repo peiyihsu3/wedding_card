@@ -3,21 +3,28 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { wedding } from '../config.js'
 import { cutRect } from '../utils/sketch.js'
 import CrayonFrame from './CrayonFrame.vue'
-// 原檔 boy.jpg / girl.jpg 各約 32MB，網頁改用縮小的版本；photo 留空時顯示預留框
-import groomPhoto from '../assets/boy-web.jpg'
-import bridePhoto from '../assets/girl-web.jpg'
+/*
+ * assets/couple 是攝影師給的原檔（每張約 32MB），網頁用 couple-web 裡縮小的版本（長邊 2400px，`sips -Z 2400 -s formatOptions 82`）；
+ * couple-web 裡的照片全部照檔名順序放進輪播，換照片只要換資料夾裡的檔案。
+ * 第一張是 FIRST，後面照檔名接下去、繞回最前面，第一個指示點就是一開始看到的那張；左右兩側跟沒轉之前一樣是它前後的照片。
+ * 橫的照片小卡照 3:4 裁掉左右，放大時才看得到整張。label 是替代文字，也是放大查看的說明
+ */
+const FIRST = '284.jpg'
+const files = import.meta.glob('../assets/couple-web/*.jpg', { eager: true, import: 'default' })
+const paths = Object.keys(files).sort()
+const start = Math.max(0, paths.findIndex((path) => path.endsWith(`/${FIRST}`)))
+const photos = [...paths.slice(start), ...paths.slice(0, start)].map((path, i, all) => ({
+  key: path,
+  photo: files[path],
+  label: `${wedding.groom}與${wedding.bride}的婚紗照（${i + 1}/${all.length}）`,
+}))
 
-const people = [
-  { key: 'groom', role: '新郎', name: wedding.groom, photo: groomPhoto },
-  { key: 'bride', role: '新娘', name: wedding.bride, photo: bridePhoto },
-]
-
-const mod = (k) => ((k % people.length) + people.length) % people.length
+const mod = (k) => ((k % photos.length) + photos.length) % photos.length
 
 /*
  * 中間一張、左右各一張縮小的，再外面各藏一張等著滑進來。
  * position 一直往上加或往下減、不回頭，每張卡片用它在這條無限長的帶子上的位置當 key：
- * 換張時同一張卡片只是換了 offset，CSS 就會把它從旁邊放大移到中間；照片只有兩張時，左右兩側會是同一張
+ * 換張時同一張卡片只是換了 offset，CSS 就會把它從旁邊放大移到中間；照片少於五張時，同一張會在帶子上出現不只一次
  */
 const position = ref(0)
 const current = computed(() => mod(position.value))
@@ -35,7 +42,7 @@ const cut = (k, { width, height }) => `path('${cutRect(width, height, { seed: k 
 const cards = computed(() =>
   [-2, -1, 0, 1, 2].map((offset) => {
     const k = position.value + offset
-    return { k, offset, index: mod(k), clip: size.value && cut(k, size.value), ...people[mod(k)] }
+    return { k, offset, index: mod(k), clip: size.value && cut(k, size.value), ...photos[mod(k)] }
   }),
 )
 
@@ -46,8 +53,8 @@ function go(step) {
 // 點下方的指示點：往比較近的方向轉過去
 function goTo(index) {
   let step = index - current.value
-  if (step > people.length / 2) step -= people.length
-  if (step < -people.length / 2) step += people.length
+  if (step > photos.length / 2) step -= photos.length
+  if (step < -photos.length / 2) step += photos.length
   go(step)
 }
 
@@ -100,7 +107,6 @@ onMounted(() => {
 onBeforeUnmount(() => observer?.disconnect())
 
 async function openLightbox(c) {
-  if (!c.photo) return
   viewing.value = c
   await nextTick()
   // 照片載入後才撐出高度，所以也要量
@@ -141,13 +147,12 @@ function onLightboxClose() {
         <button
           type="button"
           class="cutout__photo"
-          :tabindex="c.offset === 0 && c.photo ? 0 : -1"
-          :aria-label="`放大查看${c.role} ${c.name}的照片`"
+          :tabindex="c.offset === 0 ? 0 : -1"
+          :aria-label="`放大查看${c.label}`"
           @click="!c.offset && openLightbox(c)"
         >
           <span class="cutout__clip" :style="{ clipPath: c.clip }">
-            <img v-if="c.photo" class="cutout__img" :src="c.photo" :alt="`${c.role} ${c.name}`" loading="lazy" decoding="async" />
-            <span v-else class="cutout__todo">{{ c.role }}照片</span>
+            <img class="cutout__img" :src="c.photo" :alt="c.label" loading="lazy" decoding="async" />
           </span>
         </button>
       </figure>
@@ -164,12 +169,12 @@ function onLightboxClose() {
 
     <div class="carousel__dots">
       <button
-        v-for="(p, i) in people"
+        v-for="(p, i) in photos"
         :key="p.key"
         type="button"
         class="carousel__dot"
         :class="{ 'is-active': i === current }"
-        :aria-label="`第 ${i + 1} 張，${p.role}`"
+        :aria-label="`第 ${i + 1} 張`"
         :aria-current="i === current"
         @click="goTo(i)"
       />
@@ -183,13 +188,13 @@ function onLightboxClose() {
     <dialog
       ref="lightbox"
       class="lightbox"
-      :aria-label="viewing ? `${viewing.role} ${viewing.name}` : undefined"
+      :aria-label="viewing?.label"
       @click.self="closeLightbox"
       @close="onLightboxClose"
     >
       <div v-if="viewing" class="lightbox__body">
         <div ref="lightboxPhoto" class="lightbox__photo" :style="{ clipPath: lightboxClip }">
-          <img class="lightbox__img" :src="viewing.photo" :alt="`${viewing.role} ${viewing.name}`" />
+          <img class="lightbox__img" :src="viewing.photo" :alt="viewing.label" />
         </div>
         <button type="button" class="lightbox__close" aria-label="關閉" @click="closeLightbox">
           <CrayonFrame :seed="11" radius="50%" />
@@ -305,16 +310,6 @@ function onLightboxClose() {
   width: 100%;
   height: 100%;
   object-fit: cover;
-}
-
-.cutout__todo {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 14px;
 }
 
 /* 和置頂快捷按鈕同一套的蠟筆框，畫成圓的：白底、深色框線，滑過時框內換成淡淡的黃色 */

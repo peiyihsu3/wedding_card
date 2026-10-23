@@ -293,8 +293,9 @@ const COAST_GROUPS = [
     ],
   },
   {
-    // 右邊往左一點的一小叢，站得比較遠所以小一號
+    // 右邊往左一點的一小叢，站得比較遠所以小一號；手機上兩側的樹往中間擠，這叢不畫（narrow: false），中間才空得出海面和草地
     side: 'right',
+    narrow: false,
     trees: [
       { tone: 'sakura', x: 1550, cy: 2370, rx: 72, ry: 64, seed: 330 },
       { tone: 'sakura-pale', x: 1485, cy: 2425, rx: 56, ry: 50, mark: false, seed: 331 },
@@ -316,6 +317,8 @@ const COAST_GROUPS = [
 ]
 // 樹冠最高的地方（連同波浪邊往外鼓的部分）
 const COAST_TOP = Math.min(...COAST_GROUPS.flatMap((g) => g.trees.map((t) => t.cy - t.ry * 1.15)))
+// 手機上左邊那組只裁掉最左邊大樹的外側一點（首屏畫布單位），大樹才露得出來
+const COAST_CROP = 80
 
 // 地上的一片落花
 const petal = (x, y, i, wide) => ({
@@ -483,16 +486,19 @@ function drawGrove({ W, H, gap, block }) {
 
   /*
    * 上岸的地方兩側的樹（見 COAST_GROUPS）：照首屏的畫布座標縮放 k 倍，左邊那組貼齊畫面左緣、右邊兩叢貼齊右緣；
-   * 手機上放大到比畫面還寬，跟首屏一樣左右平均裁掉一些（shift）。
    * 樹幹底部踩在海岸線下方一點的草地上，樹冠高過海岸線疊在海面上；
-   * 寬螢幕最大約是首屏的八成五（首屏的樹放在這裡太搶眼），樹冠也不能碰到回覆的內容，放不下就縮小
+   * 寬螢幕最大約是首屏的八成五（首屏的樹放在這裡太搶眼），樹冠也不能碰到回覆的內容，放不下就縮小。
+   * 手機上縮到最小還是比畫面寬，兩組各自貼著畫面兩側往中間挪，多出來的寬度從中間收掉：
+   * 左邊只裁掉最左邊大樹的外側一點（COAST_CROP），右邊那一大叢本來就超出畫布，不另外裁，兩側才看得到大樹，跟小樹有大有小；
+   * 往中間擠之後右邊那一小叢不畫（narrow: false）。原本左右平均裁掉，最大的幾棵整個裁到畫面外，只剩一樣小的樹
    */
   const ground = landTop + (wide ? 22 : 14)
   const k = Math.min(Math.max(0.26, Math.min(0.6, (W / OPENING_W) * 0.85)), (ground - gap.top - 12) / (COAST_GROUND - COAST_TOP))
-  const shift = Math.min(0, (W - OPENING_W * k) / 2)
+  const over = Math.max(0, OPENING_W * k - W)
+  const crop = Math.min(COAST_CROP * k, over)
   const coastGroups = COAST_GROUPS.map(({ side, trees }, g) => {
     const id = 5000 + g * 11
-    const sx = (x) => (side === 'left' ? shift + x * k : W - shift - (OPENING_W - x) * k)
+    const sx = (x) => (side === 'left' ? x * k - crop : W - (OPENING_W - x) * k)
     const list = trees.map(({ tone, x, cy, rx, ry, ...rest }, i) => {
       const { layers, mark } = puffyTree({ ...rest, x: sx(x), y: ground, rx: rx * k, ry: ry * k, height: (COAST_GROUND - cy) * k })
       return { id: `${id}-${i}`, tone, layers, mark, markWidth: Math.max(1.4, rx * k * 0.045).toFixed(1) }
@@ -502,7 +508,7 @@ function drawGrove({ W, H, gap, block }) {
     const height = (COAST_GROUND - Math.min(...trees.map((t) => t.cy - t.ry * 1.15))) * k
     // 跟其他樹叢一樣記下中心、寬度的一半和 r（高度約 2.6r），落花和其他樹叢照這些避開
     return { id, x: (left + right) / 2, y: ground, r: height / 2.6, half: (right - left) / 2, trees: list }
-  })
+  }).filter((_, g) => !over || COAST_GROUPS[g].narrow !== false)
 
   /*
    * 其他樹叢：把岸上的草地切成大格子，每格隨機放一叢（格子裡的點是整叢的中間），大叢小叢各半，

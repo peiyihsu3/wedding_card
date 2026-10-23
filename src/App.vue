@@ -48,6 +48,14 @@ function onEdit() {
   scrollToFormArea()
 }
 
+// 重新整理一律從首屏開始：拿掉網址上的錨點（點快捷按鈕會留下 #rsvp 這類錨點），
+// 也關掉瀏覽器的捲動還原，不然會捲回重新整理前的位置；只有打開分享的連結才照錨點跳
+if (performance.getEntriesByType('navigation')[0]?.type === 'reload') {
+  history.scrollRestoration = 'manual'
+  if (location.hash) history.replaceState(history.state, '', location.pathname + location.search)
+  window.scrollTo(0, 0)
+}
+
 // 分享 #rsvp、#traffic 這類連結時，畫面渲染完再對準一次，確保會直接跳到該區塊
 onMounted(() => {
   document.getElementById(location.hash.slice(1))?.scrollIntoView()

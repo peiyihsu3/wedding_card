@@ -69,9 +69,16 @@ defineProps({
   padding-bottom: 80px;
 }
 
-/* 回覆與交通之間是一段海面加上岸的草地，海岸下方那條空的草地下面不要再空一大片，上方留白比其他區短 */
+/*
+ * 回覆與交通之間是一段海面加上岸的草地，海岸下方那條空的草地下面不要再空一大片，上方留白比其他區短；
+ * 手機上兩邊再收短，一段海面（一小群海鷗）接著岸上的樹就到交通（原本 190 + 140，海和草地都空了一大片）
+ */
+.scenic--island .scenic__inner {
+  padding-bottom: 120px;
+}
+
 .scenic--sakura .scenic__inner {
-  padding-top: 140px;
+  padding-top: 100px;
   padding-bottom: 120px;
 }
 
@@ -95,6 +102,10 @@ defineProps({
   .scenic--sea .scenic__inner {
     padding-top: 230px;
     padding-bottom: 120px;
+  }
+
+  .scenic--island .scenic__inner {
+    padding-bottom: 250px;
   }
 
   .scenic--sakura .scenic__inner {

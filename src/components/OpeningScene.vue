@@ -511,13 +511,13 @@ function waitForLoad(img) {
               </g>
               <circle class="scene__cat-blush" cx="388" cy="1871" r="3.5" />
               <circle class="scene__cat-blush" cx="427" cy="1871" r="3.5" />
-              <!-- 黃綠眼睛：墨色瞳孔和亮點都偏右，眼睛看向新人 -->
-              <ellipse class="scene__cat-eye" cx="395" cy="1859" rx="3.6" ry="4.2" />
-              <ellipse class="scene__cat-eye" cx="420" cy="1859" rx="3.6" ry="4.2" />
-              <ellipse class="scene__cat-pupil" cx="395.9" cy="1859.2" rx="1.8" ry="3" />
-              <ellipse class="scene__cat-pupil" cx="420.9" cy="1859.2" rx="1.8" ry="3" />
-              <circle class="scene__cat-shine" cx="396.4" cy="1857.6" r="1.1" />
-              <circle class="scene__cat-shine" cx="421.4" cy="1857.6" r="1.1" />
+              <!-- 黃綠的圓眼睛：圓圓的墨色瞳孔和亮點都偏右，眼睛看向新人 -->
+              <circle class="scene__cat-eye" cx="395" cy="1859" r="4" />
+              <circle class="scene__cat-eye" cx="420" cy="1859" r="4" />
+              <circle class="scene__cat-pupil" cx="396" cy="1859.3" r="2.3" />
+              <circle class="scene__cat-pupil" cx="421" cy="1859.3" r="2.3" />
+              <circle class="scene__cat-shine" cx="396.8" cy="1858.2" r="0.9" />
+              <circle class="scene__cat-shine" cx="421.8" cy="1858.2" r="0.9" />
               <path class="scene__cat-nose" d="M404 1868L412 1868L408 1872.5Z" />
               <!-- 嘴巴底下一塊灰藍的毛（跟頭一樣是漸層，畫完鋪顆粒），鼻子底下一個小小的 ω 嘴巴 -->
               <path class="scene__cat-fur" :d="art.cat.mole" />
@@ -633,9 +633,9 @@ function waitForLoad(img) {
   --vh: 1vh;
   /* 剛好一個畫面高：第一頁一開始看不到底下婚紗那張紙，往下捲才從畫面下緣進來（見 JourneyBackdrop 的 drawFrame） */
   --scene-h: max(calc(100 * var(--vh)), 320px);
-  /* 疊在插畫底部的快捷按鈕（SiteNav）：離底距離與按鈕高度；手機是貼齊畫面底部的白色紙條，連撕紙邊 56px 高 */
-  --nav-bottom: 0px;
-  --nav-h: 56px;
+  /* 疊在插畫底部的快捷按鈕（SiteNav）：離底距離與按鈕高度 */
+  --nav-bottom: 16px;
+  --nav-h: 48px;
   /* 日期離左右兩側的距離 */
   --side: max(16px, 6vw);
 
@@ -759,7 +759,7 @@ function waitForLoad(img) {
   opacity: 0.45;
 }
 
-/* 偷看新人的藍白貓：毛和白毛是漸層（PaintDefs 的 cat-fur、cat-white），眼睛是黃綠漸層（cat-eye），其他五官平塗；眼睛描一圈墨色細線，才不會糊進灰藍的毛 */
+/* 偷看新人的藍白貓：毛和白毛是漸層（PaintDefs 的 cat-fur、cat-white），眼睛是黃綠漸層（cat-eye），其他五官平塗；眼睛不描邊（描墨線像戴了黑框） */
 .scene__cat-fur {
   fill: url(#paint-shade-cat-fur);
 }
@@ -778,8 +778,6 @@ function waitForLoad(img) {
 
 .scene__cat-eye {
   fill: url(#paint-shade-cat-eye);
-  stroke: #2b2523;
-  stroke-width: 0.9;
 }
 
 .scene__cat-pupil {
@@ -1057,7 +1055,7 @@ function waitForLoad(img) {
 
   /*
    * 樹站在畫布兩側，直式螢幕看不到；左右兩組各自往中間挪（畫布座標），貼著畫面兩側框住人物。用 translate，顆粒不會跟著縮放。
-   * 手機的快捷按鈕是一條跟畫面一樣寬的白色紙條，樹站在紙的上緣會被擋掉半個樹冠：樹冠的下緣（畫布約 2470）抬到按鈕上緣，
+   * 手機的快捷按鈕幾乎跟畫面一樣寬，樹站在紙的上緣會被擋掉半個樹冠：樹冠的下緣（畫布約 2470）抬到按鈕上緣，
    * 樹幹拉長（script 的 TREE_GROUND.tall），從按鈕後面一路長到紙底下，捲動時才看不到樹幹的底
    */
   .scene--drawn .scene__canvas--trees {
@@ -1104,11 +1102,10 @@ function waitForLoad(img) {
   }
 }
 
-/* 寬螢幕的快捷按鈕比較大 */
+/* 寬螢幕的快捷按鈕離底比較遠 */
 @media (min-width: 768px) {
   .cover {
     --nav-bottom: 24px;
-    --nav-h: 48px;
   }
 }
 

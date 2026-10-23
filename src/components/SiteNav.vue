@@ -1,6 +1,5 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { tornEdge } from '../utils/sketch.js'
 import CrayonFrame from './CrayonFrame.vue'
 
 const props = defineProps({
@@ -17,35 +16,11 @@ const icons = {
   mail: 'M5 5.5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM3.5 7.5l8.5 6 8.5-6',
 }
 
-/*
- * 手機上的紙條：上緣的撕紙邊。接近水平，只微微起伏（約 200px 一個波，加一道短的打亂規律），
- * 撕口的小塊和毛邊調淡，紙邊才不會碎碎的。TEAR 是撕進去最深多少
- */
-const TEAR = 4
-const TEAR_EDGE = {
-  waves: [
-    [32, 0.4],
-    [10, 0.1],
-  ],
-  rough: 0.3,
-}
-
 const nav = ref(null)
 const active = ref('')
 const hidden = ref(false)
-// 手機上已經捲離首屏、紙條要從綠色換成白色
-const solid = ref(false)
-const paper = ref(null) // { width, height, d }
 let targets = []
 let frame = 0
-let observer = null
-
-// 紙條照實際大小畫，撕紙邊才不會跟著螢幕寬度被拉長、壓扁
-function drawPaper() {
-  const { offsetWidth: width, offsetHeight: height } = nav.value
-  if (!width || !height || (paper.value?.width === width && paper.value?.height === height)) return
-  paper.value = { width, height, d: `${tornEdge(0, width, { depth: TEAR, seed: 5, ...TEAR_EDGE })}L${width} ${height}H0Z` }
-}
 
 function update() {
   frame = 0
@@ -59,9 +34,6 @@ function update() {
   const form = document.querySelector('#rsvp form, #rsvp .success')?.getBoundingClientRect()
   const bar = nav.value.getBoundingClientRect()
   hidden.value = !!form && form.top < mid && form.top < bar.bottom && form.bottom > bar.top
-
-  // 第一區（婚紗那張紙）一捲上來碰到按鈕就換成白色紙條：首屏是綠色紙條配白字，往下捲之後換成白色紙條配墨色字
-  solid.value = !!targets[0] && targets[0].getBoundingClientRect().top < bar.bottom
 }
 
 function onScroll() {
@@ -71,8 +43,6 @@ function onScroll() {
 onMounted(() => {
   targets = props.sections.map(({ id }) => document.getElementById(id)).filter(Boolean)
   update()
-  observer = new ResizeObserver(drawPaper)
-  observer.observe(nav.value)
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', onScroll, { passive: true })
 })
@@ -81,23 +51,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('scroll', onScroll)
   window.removeEventListener('resize', onScroll)
   cancelAnimationFrame(frame)
-  observer?.disconnect()
 })
 </script>
 
 <template>
-  <nav ref="nav" class="quick-nav" :class="{ 'is-hidden': hidden, 'is-solid': solid }" aria-label="快速前往">
-    <!-- 手機上的紙條，上緣是撕開的紙邊：首屏是綠色（漸層＋顆粒），往下捲之後上面那層白色（平塗＋淡顆粒）淡入蓋過去 -->
-    <svg v-if="paper" class="quick-nav__paper" :viewBox="`0 0 ${paper.width} ${paper.height}`" aria-hidden="true">
-      <g class="quick-nav__paper-green">
-        <path class="quick-nav__paper-fill" :d="paper.d" />
-        <path class="quick-nav__paper-grain" :d="paper.d" />
-      </g>
-      <g class="quick-nav__paper-white">
-        <path class="quick-nav__paper-fill" :d="paper.d" />
-        <path class="quick-nav__paper-grain" :d="paper.d" />
-      </g>
-    </svg>
+  <nav ref="nav" class="quick-nav" :class="{ 'is-hidden': hidden }" aria-label="快速前往">
     <a
       v-for="(s, i) in sections"
       :key="s.id"
@@ -106,8 +64,8 @@ onBeforeUnmount(() => {
       :href="`#${s.id}`"
       :aria-current="active === s.id ? 'location' : undefined"
     >
-      <!-- 目前所在區塊：底下多一層黃色厚邊（手機上不畫框，字換成綠色） -->
-      <CrayonFrame class="quick-nav__frame" :seed="i * 7 + 3" />
+      <!-- 目前所在區塊：底下多一層黃色厚邊，按鈕往上墊高 -->
+      <CrayonFrame :seed="i * 7 + 3" />
       <span class="quick-nav__icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path :d="icons[s.icon]" /></svg>
       </span>
@@ -118,83 +76,34 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /*
- * 手機（比 768px 窄）：貼齊畫面底部的一條，四個項目只有字、不畫框，平分整條的寬度。
- * 紙條的上緣是撕開的紙邊：首屏時是綠色紙條配白字；往下捲、婚紗那張紙碰到按鈕之後，換成白色紙條、字換成半透明的墨色，
- * 目前所在的那一項是不透明的墨色。
- * 紙條連撕紙邊 56px 高，跟首屏的 --nav-bottom + --nav-h 一樣，首屏的人物和樹照這個高度排。
- * 平板以下（比 1024px 窄）固定在畫面底部：首屏剛好一個畫面高，一開始就疊在開場插畫的下方，
- * 往下捲時留在原處，不再跟著移到畫面頂端。桌機才往上捲到畫面頂端停住（見下面的 1024px）
+ * 平板以下（比 1024px 窄）固定在畫面底部：首屏剛好一個畫面高，一開始就疊在開場插畫的中間下方（離底距離跟首屏的 --nav-bottom 一樣），
+ * 往下捲時留在原處，不再跟著移到畫面頂端。桌機才往上捲到畫面頂端停住（見下面的 1024px）。
+ * 手機上撐到離畫面兩側 20px，按鈕平分多出來的寬度，各種寬度的手機兩側都留一樣的空白；
+ * 螢幕再寬就不再撐開，按鈕才不會拉得太長。寬螢幕只包住按鈕本身，兩側空白處不會擋到底下內容的點擊
  */
 .quick-nav {
   position: fixed;
   right: 0;
-  bottom: 0;
+  bottom: 16px;
   left: 0;
-  /* 手機的字色：首屏的綠色紙條上是白字；換成白色紙條後是半透明的墨色，目前那一項是不透明的墨色 */
-  --nav-text: #fff;
-  --nav-current: #fff;
-
   z-index: 10;
   display: flex;
-  /* 上面多留撕紙邊的深度（TEAR），字才不會壓到撕口 */
-  padding: 10px 4px 6px;
+  gap: 8px;
+  width: min(100% - 40px, 400px);
+  margin: 0 auto;
   transition: opacity 0.3s, transform 0.3s, visibility 0.3s;
 }
 
-/* 捲離首屏：其他項目淡一點，目前那一項才跳出來 */
-.quick-nav.is-solid {
-  --nav-text: rgb(43 37 35 / 0.5);
-  --nav-current: #2b2523;
-}
-
-/* 往畫面外收：在底部就往下、在頂端就往上；手機的紙條整條收到畫面下面 */
+/* 往畫面外收：在底部就往下、在頂端就往上 */
 .quick-nav.is-hidden {
   visibility: hidden;
   opacity: 0;
-  transform: translateY(100%);
+  transform: translateY(8px);
 }
 
-/*
- * 紙條：首屏時是綠色（樹叢綠上亮下暗，見 PaintDefs 的 nav-strip）＋顆粒；
- * 捲離首屏後，上面那層白色（平塗＋淡顆粒，很淺的顏色顆粒淡一點才不會髒）淡入，整個蓋掉底下的綠色和它的顆粒。
- * 婚紗那張紙是奶油白，白紙條壓在上面看不出撕口，撕邊往上透一道很淡的影子，像一張紙疊在另一張紙上
- */
-.quick-nav__paper {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  filter: drop-shadow(0 -1px 2px rgb(43 37 35 / 0.14));
-}
-
-.quick-nav__paper-grain {
-  fill: url(#paint-grain);
-}
-
-.quick-nav__paper-green .quick-nav__paper-fill {
-  fill: url(#paint-shade-nav-strip);
-}
-
-.quick-nav__paper-white {
-  opacity: 0;
-  transition: opacity 0.3s;
-}
-
-.quick-nav.is-solid .quick-nav__paper-white {
-  opacity: 1;
-}
-
-.quick-nav__paper-white .quick-nav__paper-fill {
-  fill: #fff;
-}
-
-.quick-nav__paper-white .quick-nav__paper-grain {
-  opacity: 0.45;
-}
-
-/* 按鈕：手機上只有紙條上的字，平板以上是白底配深色蠟筆框線，左邊線條圖示、右邊文字；白底不透明，壓在插畫或文字上都看得清楚 */
+/* 手繪框按鈕：白底配深色蠟筆框線，左邊線條圖示（手機上只有文字），右邊文字；白底不透明，壓在插畫或文字上都看得清楚 */
 .quick-nav__btn {
+  --ink: #2b2523;
   position: relative;
   isolation: isolate;
   display: flex;
@@ -202,48 +111,32 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 40px;
-  padding: 0 4px;
+  /* 跟桌機一樣高，手指比較好點 */
+  height: 48px;
+  padding: 0 8px;
   border-radius: 12px;
-  color: var(--nav-text);
-  transition: color 0.3s;
-  /* 字跟著螢幕寬度放大：寬度 320 的手機 14px，一般手機約 16px */
-  font-size: clamp(14px, 4.1vw, 16px);
+  color: var(--ink);
+  /* 字跟著螢幕寬度放大：寬度 320 的手機 13px 剛好排得下，一般手機約 15px */
+  font-size: clamp(13px, 3.8vw, 15px);
   font-weight: 600;
   letter-spacing: 0.15em;
   white-space: nowrap;
   text-decoration: none;
-}
-
-.quick-nav__btn.is-active {
-  --crayon-shade: 1;
-  color: var(--nav-current);
-}
-
-.quick-nav__frame {
-  display: none;
+  transition: transform 0.2s;
 }
 
 /*
- * 字距會在最後一個字後面多出一段空白，收回來文字才會置中。
- * 手機上換到目前那一項時，字放大一下再縮回原本的大小，像跳一下；停下來的字跟其他項目一樣大。
- * 用縮放不改字級，旁邊的字才不會被擠動；從字的中間放大（扣掉最後一個字後面的字距）
+ * 目前所在：黃色厚邊（CrayonFrame 往下錯開 5px）墊在底下，整顆按鈕往上抬同樣的距離，
+ * 厚邊的下緣剛好落在按鈕原本的底，看起來是從下面把按鈕墊高，不是厚邊往下長出去
  */
+.quick-nav__btn.is-active {
+  --crayon-shade: 1;
+  transform: translateY(-5px);
+}
+
+/* 字距會在最後一個字後面多出一段空白，收回來文字才會置中 */
 .quick-nav__label {
   margin-right: -0.15em;
-  transform-origin: calc(50% - 0.075em) 50%;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .quick-nav__btn.is-active .quick-nav__label {
-    animation: nav-pop 0.45s ease-out;
-  }
-}
-
-@keyframes nav-pop {
-  40% {
-    transform: scale(1.2);
-  }
 }
 
 /*
@@ -271,48 +164,23 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 平板：沒有紙條，一排白底蠟筆框的按鈕浮在畫面底部，一直是墨色字（目前那一項用黃色厚邊標示） */
 @media (min-width: 768px) {
-  .quick-nav,
-  .quick-nav.is-solid {
-    --nav-text: #2b2523;
-    --nav-current: #2b2523;
-  }
-
   .quick-nav {
     bottom: 24px;
     gap: 12px;
     width: fit-content;
-    margin: 0 auto;
-    padding: 0;
-  }
-
-  .quick-nav.is-hidden {
-    transform: translateY(8px);
-  }
-
-  .quick-nav__paper {
-    display: none;
-  }
-
-  .quick-nav__frame {
-    display: block;
   }
 
   .quick-nav__btn {
     gap: 8px;
-    height: 48px;
     padding: 0 18px;
     font-size: 14px;
     letter-spacing: 0.2em;
     --crayon-stroke: 2.6;
   }
 
-  /* 平板的字在框裡，放大會撐出框，目前那一項只用黃色厚邊標示 */
-  .quick-nav__label,
-  .quick-nav__btn.is-active .quick-nav__label {
+  .quick-nav__label {
     margin-right: -0.2em;
-    animation: none;
   }
 
   .quick-nav__icon {
