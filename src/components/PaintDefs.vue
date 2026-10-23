@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { GRAIN_SIZE, grainDot, grainImage } from '../utils/grain.js'
+import { NAV_CAT } from '../utils/blueCat.js'
 
 /*
  * 全站共用的插畫質感定義，整頁只放一份（App.vue），其他 svg 用 url(#paint-…) 參照：
@@ -60,7 +61,8 @@ const SHADES = [
 
 /*
  * 顆粒圖樣：一個雜訊點大約是螢幕的一個實體像素。
- * paint-grain 給座標就是 CSS 像素的 svg 用（往下捲的風景）；paint-grain-cover 給首屏的畫布用。
+ * paint-grain 給座標就是 CSS 像素的 svg 用（往下捲的風景）；paint-grain-cover 給首屏的畫布用；
+ * paint-grain-cat 給快捷按鈕上的貓用（首屏畫布座標、固定縮成 NAV_CAT.scale 倍）。
  * 縮放瀏覽器會改變裝置像素比，跟著重算
  */
 const grainUrl = grainImage()
@@ -117,6 +119,14 @@ onBeforeUnmount(() => window.removeEventListener('resize', onResize))
     </pattern>
     <pattern id="paint-grain-cover" patternUnits="userSpaceOnUse" :width="coverGrain" :height="coverGrain">
       <image :href="grainUrl" :width="coverGrain" :height="coverGrain" />
+    </pattern>
+    <pattern
+      id="paint-grain-cat"
+      patternUnits="userSpaceOnUse"
+      :width="screenTile / NAV_CAT.scale"
+      :height="screenTile / NAV_CAT.scale"
+    >
+      <image :href="grainUrl" :width="screenTile / NAV_CAT.scale" :height="screenTile / NAV_CAT.scale" />
     </pattern>
     <pattern id="paint-grid-paper" patternUnits="userSpaceOnUse" :width="GRID_CELL" :height="GRID_CELL">
       <rect :width="GRID_CELL" :height="GRID_CELL" fill="#fff" />

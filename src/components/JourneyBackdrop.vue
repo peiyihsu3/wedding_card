@@ -5,6 +5,7 @@ import { PETAL, noise } from '../utils/sakura.js'
 import { seaMarksImage } from '../utils/seaMarks.js'
 import { puffyTree } from '../utils/puffyTree.js'
 import { GRAIN_SIZE, grainDot, grainImage } from '../utils/grain.js'
+import { vPauseOffscreen } from '../utils/offscreen.js'
 import SeaGull from './SeaGull.vue'
 
 /*
@@ -22,7 +23,8 @@ import SeaGull from './SeaGull.vue'
  */
 const root = ref(null)
 const scene = shallowRef(null)
-const wavesImage = seaMarksImage()
+// 海紋只留一半左右，疏一點（全部畫上去太密，留六成也還是太密）；首屏的海紋照原本的密度
+const wavesImage = seaMarksImage({ keep: 0.45 })
 // 海和最下面的草地是 <main> 的背景，顆粒用同一張雜訊圖鋪成 CSS 背景（svg 裡的色塊用 paint-grain，大小一樣）
 const grainUrl = `url(${grainImage()})`
 
@@ -126,7 +128,8 @@ function draw({ W, H, zones }) {
       { key: 'below', trees: grove.below.trees, below: true },
     ],
     belowPetals: grove.below.petals,
-    fallers: cached('fallers', { W, zone: grove.sakura, count: W >= 768 ? 40 : 22 }, drawFallers),
+    // 落花原本 40、22 片，太多，減到約六成；平板、手機（比 1024px 窄）再少一點，平板 14 片、手機 9 片
+    fallers: cached('fallers', { W, zone: grove.sakura, count: W >= 1024 ? 24 : W >= 768 ? 14 : 9 }, drawFallers),
     /*
      * 海是 <main> 的背景：由上往下從淡黃變成藍，一路變到上岸的地方（seaGradient）。
      * 婚紗的紙和上岸後的草地是 svg 畫的，草地只畫到收合時的 <main> 底部；常見問題展開多出來的那段露出背景，接著草地最下面的顏色。
@@ -356,7 +359,7 @@ function petalsUnder(clumps, ok, wide) {
  * 才不會在畫面的兩個下角往上縮、露出海。
  * 佔滿畫面時連畫面的兩個下角都蓋住，不會露出後面的海；垂下去的那段落在畫面外，捲下去才看得到弧度。
  * 下緣比婚紗那一區的底再往下多畫 HEM_OVER，手繪的小抖動才不會在畫面下緣露出一條海。
- * 紙佔滿畫面之後再往下捲，下緣這張比頁面慢一點，捲到畫面頂端時比原位低 down，
+ * 桌機上紙佔滿畫面之後再往下捲，下緣這張比頁面慢一點，捲到畫面頂端時比原位低 down（平板、手機不錯開），
  * 照片、海、資訊照正常速度捲上來，海像是從紙底下滑進去。
  * down 照紙下面那段海面算，往下錯得少一點，不會碰到資訊。
  * 上半截只畫到 sheetBottom，一直被下緣這張蓋著；
@@ -599,10 +602,12 @@ function update() {
 /*
  * 跟著捲動的紙的下緣：支援捲動時間軸的瀏覽器直接用 CSS 做（見樣式的 hem-lag），不支援的才在這裡照捲動距離算：
  * 下緣從畫面下緣進來到從上緣離開走到哪裡（0–1，跟 CSS 的 view() 一樣），換算成錯開多少（--hem-shift）。
- * 減少動態效果時不做，紙的下緣停在原位
+ * 減少動態效果時不做，平板、手機（比 1024px 窄）也不做（跟 CSS 同一條條件），紙的下緣停在原位；
+ * 視窗會轉向、拉寬拉窄，每一格都重看一次
  */
 const riseByScript =
   !CSS.supports('animation-timeline: scroll()') && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const hemLagQuery = window.matchMedia('(min-width: 1024px)')
 let riseFrame = 0
 const clamp01 = (t) => Math.min(1, Math.max(0, t))
 function applyRise() {
@@ -610,7 +615,7 @@ function applyRise() {
   const hem = root.value.querySelector('.journey__hem')
   if (hem && scene.value) {
     const { top, height } = hem.getBoundingClientRect()
-    const at = clamp01((window.innerHeight - top) / (window.innerHeight + height))
+    const at = hemLagQuery.matches ? clamp01((window.innerHeight - top) / (window.innerHeight + height)) : 0
     hem.firstElementChild.style.setProperty('--hem-shift', `${(scene.value.frame.hem.down * at).toFixed(1)}px`)
   }
 }
@@ -654,17 +659,17 @@ onBeforeUnmount(() => {
  * 櫻花林裡紛飛的花瓣：被風吹著一邊往下落、一邊往右飄（wind 是落完整段時往右飄的距離），
  * 起點從畫面左外側排到右邊，飄進來的花瓣才會鋪滿整個寬度。
  * 位置、大小、速度用固定的偽亂數打散，大的離畫面近、落得快一點。
- * 落完整段範圍（drop）的秒數照範圍高度算，速度才一致；rest 是減少動態效果時停住的高度
+ * 落完整段範圍（drop）的秒數照範圍高度算，速度才一致；rest 是減少動態效果時停住的高度。
+ * 花瓣都放在一個蓋住落花範圍的框裡（box），框不會動，捲出畫面就把花瓣停下來（多落的 48px 也算在內，見 faller-fall）
  */
 function drawFallers({ W, zone: { top, bottom }, count }) {
   const h = bottom - top
   const wind = W >= 768 ? 240 : 110
-  return Array.from({ length: count }, (_, i) => {
+  const list = Array.from({ length: count }, (_, i) => {
     const size = 10 + noise(i, 41) * 9
     return {
       cls: `petal-${i % 3}`,
       style: {
-        top: `${top}px`,
         left: `${Math.round(-wind + ((i + noise(i, 42)) / count) * (W + wind))}px`,
         '--drop': `${h}px`,
         '--wind': `${Math.round(wind * (0.7 + noise(i, 48) * 0.6))}px`,
@@ -678,14 +683,15 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
       },
     }
   })
+  return { box: { top: `${top}px`, height: `${h + 48}px` }, list }
 }
 </script>
 
 <template>
   <div ref="root" class="journey" aria-hidden="true" :style="scene?.style">
     <template v-if="scene">
-      <!-- 海紋：深藍色的斜短線慢慢往左流；上下會被紙和上岸的草地蓋住 -->
-      <div class="journey__waves" :style="scene.waves">
+      <!-- 海紋：深藍色的斜短線慢慢往左流；上下會被紙和上岸的草地蓋住。整段捲出畫面就停 -->
+      <div v-pause-offscreen class="journey__waves" :style="scene.waves">
         <div class="journey__waves-flow" :style="{ backgroundImage: wavesImage }"></div>
       </div>
 
@@ -744,12 +750,14 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
 
       <SeaGull v-for="(style, i) in scene.sea.gulls" :key="`g${i}`" class="journey__gull" :style="style" />
 
-      <!-- 櫻花林裡紛飛的花瓣：外層負責被風吹著往右下落，中層左右飄，內層翻轉 -->
-      <div v-for="(f, i) in scene.fallers" :key="`f${i}`" class="journey__faller" :style="f.style">
-        <div class="journey__faller-sway">
-          <svg class="journey__faller-spin" viewBox="-10 -10 20 20">
-            <path :class="f.cls" :d="PETAL" />
-          </svg>
+      <!-- 櫻花林裡紛飛的花瓣：外層負責被風吹著往右下落，中層左右飄，內層翻轉；落花範圍捲出畫面就停 -->
+      <div v-pause-offscreen class="journey__fallers" :style="scene.fallers.box">
+        <div v-for="(f, i) in scene.fallers.list" :key="`f${i}`" class="journey__faller" :style="f.style">
+          <div class="journey__faller-sway">
+            <svg class="journey__faller-spin" viewBox="-10 -10 20 20">
+              <path :class="f.cls" :d="PETAL" />
+            </svg>
+          </div>
         </div>
       </div>
     </template>
@@ -906,12 +914,19 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
 
 /* ---------- 海鷗、飄落的花瓣 ---------- */
 .journey__gull,
+.journey__fallers,
 .journey__faller {
   position: absolute;
 }
 
+.journey__fallers {
+  right: 0;
+  left: 0;
+}
+
 /* 飄落的花瓣：外層從落花範圍的頂端往下平移整段範圍的高度（--drop），就是從頂端落到底端 */
 .journey__faller {
+  top: 0;
   width: var(--size);
   transform: translateY(var(--rest));
 }
@@ -924,9 +939,40 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* 紙的下緣：從畫面下緣進來（紙剛好佔滿畫面）到從上緣離開，從原位錯到往下 --hem-down，比頁面捲得慢一點 */
+  /* 每秒約 10px，慢慢流（原本每秒約 16px，動得太快） */
+  .journey__waves-flow {
+    animation: drift 48s linear infinite;
+    animation-play-state: var(--loop, running);
+  }
+
+  .journey__faller {
+    animation: faller-fall var(--fall) linear var(--delay) infinite;
+    animation-play-state: var(--loop, running);
+  }
+
+  .journey__faller-sway {
+    animation: faller-sway var(--sway) ease-in-out var(--delay) infinite alternate;
+    animation-play-state: var(--loop, running);
+  }
+
+  .journey__faller-spin {
+    animation: faller-spin var(--spin) ease-in-out var(--delay) infinite alternate;
+    animation-play-state: var(--loop, running);
+  }
+}
+
+/*
+ * 紙的下緣：從畫面下緣進來（紙剛好佔滿畫面）到從上緣離開，從原位錯到往下 --hem-down，比頁面捲得慢一點。
+ * 只有桌機才錯開：平板、手機（比 1024px 窄）不做這個落差，下緣停在原位跟著頁面捲
+ */
+@media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {
   .journey__hem {
     view-timeline: --journey-hem block;
+  }
+
+  /* 跟著捲動錯開，獨立成圖層，捲動時只要搬動、不必重畫（不支援捲動時間軸的瀏覽器由 script 每一格改位移） */
+  .journey__hem-sheet {
+    will-change: transform;
   }
 
   @supports (animation-timeline: view()) {
@@ -934,23 +980,6 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
       animation: hem-lag linear both;
       animation-timeline: --journey-hem;
     }
-  }
-
-  /* 每秒約 16px，跟原本的流速差不多 */
-  .journey__waves-flow {
-    animation: drift 30s linear infinite;
-  }
-
-  .journey__faller {
-    animation: faller-fall var(--fall) linear var(--delay) infinite;
-  }
-
-  .journey__faller-sway {
-    animation: faller-sway var(--sway) ease-in-out var(--delay) infinite alternate;
-  }
-
-  .journey__faller-spin {
-    animation: faller-spin var(--spin) ease-in-out var(--delay) infinite alternate;
   }
 }
 

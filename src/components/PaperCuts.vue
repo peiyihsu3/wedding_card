@@ -1,6 +1,7 @@
 <script setup>
 import { noise } from '../utils/sakura.js'
 import { blob, heart, sparkle } from '../utils/paperCut.js'
+import { vPauseOffscreen } from '../utils/offscreen.js'
 
 /*
  * 婚紗那一區紙的下緣附近，散著幾片小剪紙（參考 ITO FARM）：不規則的圓片、愛心、五道短條拼成的星星，
@@ -67,27 +68,21 @@ const pieces = PIECES.map((p, i) => {
 </script>
 
 <template>
-  <div class="paper-cuts" aria-hidden="true">
-    <svg
-      v-for="(p, i) in pieces"
-      :key="i"
-      class="paper-cut"
-      :class="{ 'paper-cut--wide': p.wide }"
-      :style="p.style"
-      :viewBox="`0 0 ${p.box} ${p.box}`"
-    >
-      <g class="paper-cut__body">
+  <!-- 外層漂、裡面那張 svg 搖：動的都是元素本身，畫好一次交給 GPU 搬，不必每一格重畫剪紙 -->
+  <div v-pause-offscreen class="paper-cuts" aria-hidden="true">
+    <div v-for="(p, i) in pieces" :key="i" class="paper-cut" :class="{ 'paper-cut--wide': p.wide }" :style="p.style">
+      <svg class="paper-cut__body" :viewBox="`0 0 ${p.box} ${p.box}`">
         <path :d="p.d" :fill="p.fill" />
         <path class="paper-cut__grain" :class="{ 'paper-cut__grain--soft': p.soft }" :d="p.d" />
-      </g>
-    </svg>
+      </svg>
+    </div>
   </div>
 </template>
 
 <style scoped>
 /*
  * 鋪滿整個婚紗區塊（ScenicSection 的 scenic--sky），排在照片後面；
- * 紙的下緣往下捲時會比頁面慢一點、往下錯開，剪紙跟著區塊走，只會離下緣更遠，不會跑到海上。
+ * 桌機上紙的下緣往下捲時會比頁面慢一點、往下錯開，剪紙跟著區塊走，只會離下緣更遠，不會跑到海上。
  * --band 是剪紙散開的高度：手機上照片下面空比較多，散得高一點
  */
 .paper-cuts {
@@ -104,7 +99,6 @@ const pieces = PIECES.map((p, i) => {
   bottom: calc(12px + var(--y) * var(--band));
   width: var(--box);
   height: var(--box);
-  overflow: visible;
   transform: rotate(var(--rot));
 }
 
@@ -116,20 +110,27 @@ const pieces = PIECES.map((p, i) => {
   opacity: 0.45;
 }
 
-/* 搖擺繞著剪紙自己的中心轉 */
+/* 剪紙畫在畫布正中間，搖擺繞著畫布的中心轉，就是繞著剪紙自己的中心 */
 .paper-cut__body {
-  transform-box: fill-box;
-  transform-origin: 50% 50%;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
 }
 
-/* 整片漂一段、轉一點，再漂回來；剪紙本身同時比較快地左右搖 */
-@media (prefers-reduced-motion: no-preference) {
+/*
+ * 整片漂一段、轉一點，再漂回來；剪紙本身同時比較快地左右搖。
+ * 只有桌機會動：平板、手機（比 1024px 窄）停在原位，斜斜地擺著就好，省一點循環動畫
+ */
+@media (prefers-reduced-motion: no-preference) and (min-width: 1024px) {
   .paper-cut {
     animation: paper-cut-drift var(--dur) ease-in-out var(--delay) infinite alternate;
+    animation-play-state: var(--loop, running);
   }
 
   .paper-cut__body {
     animation: paper-cut-sway var(--sway-dur) ease-in-out var(--sway-delay) infinite alternate;
+    animation-play-state: var(--loop, running);
   }
 }
 

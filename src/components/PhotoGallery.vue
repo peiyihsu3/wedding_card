@@ -6,14 +6,21 @@ import CrayonFrame from './CrayonFrame.vue'
 /*
  * assets/couple 是攝影師給的原檔（每張約 32MB），網頁用 couple-web 裡縮小的版本（長邊 2400px，`sips -Z 2400 -s formatOptions 82`）；
  * couple-web 裡的照片全部照檔名順序放進輪播，換照片只要換資料夾裡的檔案。
- * 第一張是 FIRST，後面照檔名接下去、繞回最前面，第一個指示點就是一開始看到的那張；左右兩側跟沒轉之前一樣是它前後的照片。
+ * 第一張是 FIRST，第一個指示點就是一開始看到的那張；一開始右邊是 NEXT、左邊是 PREV（排在最後一張，往左就繞到它），
+ * 其他照片從 FIRST 照檔名接下去、繞回最前面，排在兩張中間。
  * 橫的照片小卡照 3:4 裁掉左右，放大時才看得到整張。label 是替代文字，也是放大查看的說明
  */
 const FIRST = '284.jpg'
+const NEXT = '042.jpg'
+const PREV = '320.jpg'
 const files = import.meta.glob('../assets/couple-web/*.jpg', { eager: true, import: 'default' })
 const paths = Object.keys(files).sort()
 const start = Math.max(0, paths.findIndex((path) => path.endsWith(`/${FIRST}`)))
-const photos = [...paths.slice(start), ...paths.slice(0, start)].map((path, i, all) => ({
+const rotated = [...paths.slice(start), ...paths.slice(0, start)]
+// 資料夾裡沒有指定的檔案時就照檔名排，不會多出空的一張
+const pick = (file) => rotated.filter((path) => path.endsWith(`/${file}`))
+const rest = rotated.filter((path) => ![FIRST, NEXT, PREV].some((file) => path.endsWith(`/${file}`)))
+const photos = [...pick(FIRST), ...pick(NEXT), ...rest, ...pick(PREV)].map((path, i, all) => ({
   key: path,
   photo: files[path],
   label: `${wedding.groom}與${wedding.bride}的婚紗照（${i + 1}/${all.length}）`,

@@ -1,10 +1,14 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import CrayonFrame from './CrayonFrame.vue'
+import BlueCat from './BlueCat.vue'
+import { CAT_SAY, NAV_CAT } from '../utils/blueCat.js'
 
 const props = defineProps({
   // [{ id, label, icon }]，id 對應頁面上各區塊的 id，也是分享用的錨點（例如 #rsvp）；icon 是下方 icons 的名稱
   sections: { type: Array, required: true },
+  // 首屏的進場開始了，按鈕上的貓才出場
+  catReady: { type: Boolean, default: false },
 })
 
 // 線條圖示（24×24）
@@ -16,9 +20,34 @@ const icons = {
   mail: 'M5 5.5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM3.5 7.5l8.5 6 8.5-6',
 }
 
+/*
+ * 直式螢幕（平板以下）首屏左邊的樹叢被裁掉，看不到首屏的藍白貓，改成貓趴在「出席回覆」按鈕上（形狀和比例見 utils/blueCat.js 的 NAV_CAT）：
+ * 頭躲在按鈕的白底後面，下巴被按鈕擋住，兩隻腳掌搭在按鈕的上緣，旁邊喊一聲「喵！」。
+ * 頭、腳掌、對話框分成三層疊在一起，都用同一個框（貓和對話框這一塊），照 scale 換算成 CSS 像素；
+ * 按鈕的上緣（蠟筆框內縮 1px）對齊畫布 edge，頭的中心（畫布 402）對準按鈕的中間
+ */
+const CAT_HEAD_X = 402
+const [boxX, boxY, boxW, boxH] = NAV_CAT.box
+const catBox = {
+  width: `${boxW * NAV_CAT.scale}px`,
+  height: `${boxH * NAV_CAT.scale}px`,
+  top: `${(boxY - NAV_CAT.edge) * NAV_CAT.scale + 1}px`,
+  left: `calc(50% - ${(CAT_HEAD_X - boxX) * NAV_CAT.scale}px)`,
+}
+const inBox = ([x, y]) => `${((x - boxX) / boxW) * 100}% ${((y - boxY) / boxH) * 100}%`
+const catSay = {
+  viewBox: NAV_CAT.box.join(' '),
+  // 字的中心、彈出來的中心（尖角）
+  at: inBox(CAT_SAY.at).split(' '),
+  origin: inBox(CAT_SAY.tip),
+  fontSize: `${CAT_SAY.size * NAV_CAT.scale}px`,
+}
+
 const nav = ref(null)
 const active = ref('')
 const hidden = ref(false)
+// 往下捲離開最上面，貓的對話框就收起來，貓也不再探頭縮頭
+const scrolled = ref(false)
 let targets = []
 let frame = 0
 
@@ -34,6 +63,7 @@ function update() {
   const form = document.querySelector('#rsvp form, #rsvp .success')?.getBoundingClientRect()
   const bar = nav.value.getBoundingClientRect()
   hidden.value = !!form && form.top < mid && form.top < bar.bottom && form.bottom > bar.top
+  scrolled.value = window.scrollY > 16
 }
 
 function onScroll() {
@@ -55,7 +85,12 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <nav ref="nav" class="quick-nav" :class="{ 'is-hidden': hidden }" aria-label="快速前往">
+  <nav
+    ref="nav"
+    class="quick-nav"
+    :class="{ 'is-hidden': hidden, 'is-scrolled': scrolled, 'is-cat-ready': catReady }"
+    aria-label="快速前往"
+  >
     <a
       v-for="(s, i) in sections"
       :key="s.id"
@@ -70,6 +105,33 @@ onBeforeUnmount(() => {
         <svg viewBox="0 0 24 24"><path :d="icons[s.icon]" /></svg>
       </span>
       <span class="quick-nav__label">{{ s.label }}</span>
+      <!-- 趴在按鈕上的貓（直式螢幕才有）：頭在按鈕的白底後面，腳掌和對話框在按鈕上面 -->
+      <template v-if="s.id === 'rsvp'">
+        <svg class="quick-nav__cat quick-nav__cat-head" :style="catBox" :viewBox="catSay.viewBox" aria-hidden="true">
+          <BlueCat grain="paint-grain-cat" />
+        </svg>
+        <svg class="quick-nav__cat quick-nav__cat-paws" :style="catBox" :viewBox="catSay.viewBox" aria-hidden="true">
+          <BlueCat part="paws" :paws="NAV_CAT.paws" grain="paint-grain-cat" />
+        </svg>
+        <span class="quick-nav__cat quick-nav__say" :style="{ ...catBox, transformOrigin: catSay.origin }" aria-hidden="true">
+          <span class="quick-nav__say-pop" :style="{ transformOrigin: catSay.origin }">
+            <svg class="quick-nav__say-frame" :viewBox="catSay.viewBox">
+              <path class="quick-nav__say-bubble" :d="CAT_SAY.bubble" />
+            </svg>
+            <span
+              class="quick-nav__say-text"
+              :style="{ left: catSay.at[0], top: catSay.at[1], fontSize: catSay.fontSize }"
+            >
+              <span
+                v-for="(c, j) in CAT_SAY.chars"
+                :key="j"
+                class="quick-nav__char"
+                :class="{ 'quick-nav__char--punct': c.punct }"
+              >{{ c.char }}</span>
+            </span>
+          </span>
+        </span>
+      </template>
     </a>
   </nav>
 </template>
@@ -164,6 +226,147 @@ onBeforeUnmount(() => {
   }
 }
 
+/*
+ * 趴在「出席回覆」上的貓：只有直式螢幕（首屏的貓看不到）、按鈕固定在畫面底部（平板以下）才有，見下面的 1024px。
+ * 點下去還是按鈕，貓不擋點擊
+ */
+.quick-nav__cat {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+}
+
+@media not all and (min-aspect-ratio: 6/5) {
+  .quick-nav__cat {
+    display: block;
+  }
+}
+
+/* 頭墊在按鈕的白底（CrayonFrame，z-index -1）後面，下巴被按鈕擋住；腳掌和對話框在按鈕上面 */
+.quick-nav__cat-head {
+  z-index: -2;
+}
+
+.quick-nav__cat-paws,
+.quick-nav__say {
+  z-index: 1;
+}
+
+/* 往下捲就收起來：從尖角那裡縮回去 */
+.quick-nav__say {
+  transition:
+    opacity 0.2s,
+    scale 0.2s,
+    visibility 0.2s;
+}
+
+.quick-nav.is-scrolled .quick-nav__say {
+  visibility: hidden;
+  opacity: 0;
+  scale: 0.6;
+}
+
+/* 對話框跟首屏的一樣：白底、深色手繪框線（抖動濾鏡只套在框線上），圓體黑字描一圈同色的邊加粗 */
+.quick-nav__say-pop,
+.quick-nav__say-frame {
+  position: absolute;
+  inset: 0;
+}
+
+.quick-nav__say-frame {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: url(#paint-sketch-names);
+}
+
+.quick-nav__say-bubble {
+  fill: #fff;
+  stroke: #2b2523;
+  stroke-width: 2.4px;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.quick-nav__say-text {
+  position: absolute;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  line-height: 1.25;
+  letter-spacing: 0.12em;
+  text-indent: 0.12em;
+  -webkit-text-stroke: 0.045em currentColor;
+  translate: -50% -50%;
+}
+
+.quick-nav__char {
+  display: inline-block;
+}
+
+/* 全形驚嘆號的筆畫只在字身正中間，左右各空了快半個字，收緊才不會像多了一格空白 */
+.quick-nav__char--punct {
+  margin: 0 -0.35em 0 -0.3em;
+}
+
+/*
+ * 跟首屏的貓同一拍出場（見 OpeningScene 的 scene__cat，首屏的進場開始後 1s）：頭從按鈕後面冒出來，腳掌接著搭上來，對話框跟著跳出來；
+ * 出場後頭慢慢縮回去一點又探出來，像在偷看。往下捲就停在原處不動。
+ * 動的都是 svg 元素本身，不必每一格重畫貓；出場用 translate、探頭用 transform，兩個動畫才不會搶同一個屬性。
+ * 位移是畫布單位換算成 CSS 像素（× NAV_CAT.scale 0.6）
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .quick-nav:not(.is-cat-ready) .quick-nav__cat-head,
+  .quick-nav:not(.is-cat-ready) .quick-nav__cat-paws,
+  .quick-nav:not(.is-cat-ready) .quick-nav__say-pop {
+    visibility: hidden;
+  }
+
+  .quick-nav.is-cat-ready .quick-nav__cat-head {
+    animation:
+      nav-cat-appear 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) 1s both,
+      nav-cat-peek 3.4s ease-in-out 1.4s infinite alternate;
+  }
+
+  .quick-nav.is-scrolled .quick-nav__cat-head {
+    animation-play-state: running, paused;
+  }
+
+  .quick-nav.is-cat-ready .quick-nav__cat-paws {
+    animation: nav-cat-paws 0.18s cubic-bezier(0.22, 0.61, 0.36, 1) 1.2s both;
+  }
+
+  .quick-nav.is-cat-ready .quick-nav__say-pop {
+    animation: nav-cat-say 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) 1.25s both;
+  }
+}
+
+/* 出場前整顆頭（連耳朵）藏在按鈕後面；再往下會從按鈕的下緣露出來 */
+@keyframes nav-cat-appear {
+  from {
+    translate: 0 36px;
+  }
+}
+
+@keyframes nav-cat-paws {
+  from {
+    opacity: 0;
+    translate: 0 3.6px;
+  }
+}
+
+@keyframes nav-cat-peek {
+  to {
+    transform: translateY(4.8px);
+  }
+}
+
+@keyframes nav-cat-say {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
 @media (min-width: 768px) {
   .quick-nav {
     bottom: 24px;
@@ -207,6 +410,11 @@ onBeforeUnmount(() => {
 
   .quick-nav.is-hidden {
     transform: translateY(-8px);
+  }
+
+  /* 桌機的按鈕會捲到畫面頂端，不放貓 */
+  .quick-nav__cat {
+    display: none;
   }
 }
 </style>

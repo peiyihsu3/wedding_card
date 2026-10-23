@@ -27,6 +27,8 @@ const sections = [
 const drawnCover = !new URLSearchParams(location.search).has('painted')
 // 首屏畫布裡一格顆粒圖樣的大小，首屏量好畫布後回報（見 PaintDefs）
 const coverGrain = ref(160)
+// 首屏的進場開始了：快捷按鈕上的貓照這個時間出場
+const coverReady = ref(false)
 
 const result = ref(null) // { payload, updated }
 const lastForm = ref(null) // 「修改回覆」時預填
@@ -65,8 +67,8 @@ onMounted(() => {
 <template>
   <!-- 全站共用的漸層、顆粒與手繪濾鏡 -->
   <PaintDefs :cover-grain="coverGrain" />
-  <OpeningScene :drawn="drawnCover" @grain-tile="coverGrain = $event" />
-  <SiteNav :sections="sections" />
+  <OpeningScene :drawn="drawnCover" @grain-tile="coverGrain = $event" @ready="coverReady = true" />
+  <SiteNav :sections="sections" :cat-ready="coverReady" />
   <!--
     往下捲是一整片連續的風景，交界的雲之後是夕陽的天空（婚紗），
     接著一路是海（資訊、回覆），最後上岸，櫻花林越往下越密（交通）

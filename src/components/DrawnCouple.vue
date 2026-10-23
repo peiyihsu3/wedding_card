@@ -42,10 +42,55 @@ function shoe({ x, y, angle, scale = 1, flip = false }) {
   ]
 }
 
+/*
+ * 新郎舉起來揮手的手：手掌張開，四根手指從手掌上緣散開成扇形（中指最長、小指最短），大拇指往右上翹開（原本握拳）。
+ * 照手腕的座標排（手腕中點是原點、手指朝上），再轉到差不多是手臂的方向、手腕往後扳一點；手腕往下多畫一截壓在手臂上。
+ * 手掌連四根手指一塊、大拇指另外一塊壓在手掌旁邊，同色疊在一起看不出接縫。
+ * 手指只有手臂的三分之一寬，抖動要小、取點要密，指尖才圓
+ */
+const HAND = {
+  x: 227,
+  y: 63,
+  angle: -14,
+  // 每根指頭：根部的中點、往右偏幾度、長度
+  fingers: [
+    { at: [-13.5, -22], tilt: -22, len: 15 },
+    { at: [-4.5, -25], tilt: -8, len: 20 },
+    { at: [4.5, -26], tilt: 5, len: 22 },
+    { at: [13.5, -25], tilt: 18, len: 19 },
+  ],
+  thumb: { at: [14, -12], tilt: 55, len: 19, r: 4.6 },
+}
+function openHand({ x, y, angle, fingers, thumb }) {
+  const a = (angle * Math.PI) / 180
+  const pt = ([px, py]) =>
+    `${(x + px * Math.cos(a) - py * Math.sin(a)).toFixed(1)} ${(y + px * Math.sin(a) + py * Math.cos(a)).toFixed(1)}`
+  // 一根指頭：從根部的左邊往上、繞過半圓的指尖、沿右邊回到根部（from 是根部往指尖退幾格開始畫）
+  const digit = ({ at: [bx, by], tilt, len, r = 4 }, from = 0) => {
+    const t = (tilt * Math.PI) / 180
+    const p = (s, k) => pt([bx + Math.sin(t) * s - Math.cos(t) * k, by - Math.cos(t) * s - Math.sin(t) * k])
+    const cap = len + (r * 4) / 3
+    return `L${p(from, r)}L${p(len, r)}C${p(cap, r)} ${p(cap, -r)} ${p(len, -r)}L${p(from, -r)}`
+  }
+  const small = (d) => ({ cls: 'couple-skin', d: sketch(d, opt(seed++, { step: 2, amp: 0.7, wavelength: 30 })) })
+  return [
+    // 手腕底下 → 小指那一側的掌緣微微鼓出來 → 四根手指 → 虎口 → 手腕
+    small(
+      `M${pt([12.5, 8])}L${pt([-12.5, 8])}L${pt([-12, 0])}C${pt([-13, -6])} ${pt([-17, -12])} ${pt([-17, -19])}` +
+        `${fingers.map((f) => digit(f)).join('')}L${pt([16, -12])}L${pt([13, 0])}Z`,
+    ),
+    // 大拇指的根部埋在手掌裡
+    small(`M${pt(thumb.at)}${digit(thumb, -4)}Z`),
+  ]
+}
+
 // 新郎（左）：由後往前畫
 const groom = [
   // 往後踢的那隻腳的鞋子：鞋頭朝左下伸出褲管、鞋底朝上，鞋跟和鞋口藏在褲管裡（鞋頭朝右上伸進褲管試過，看起來像穿反）
   ...shoe({ x: 108, y: 348, angle: 149, scale: 0.95 }),
+  // 站直那隻腳：腳踝伸進鞋口裡，上緣藏在褲管後面、讓褲管的下緣蓋住（原本畫在褲子前面，腳踝蓋過褲管下緣，像腳跑到褲子外面）
+  part('couple-skin', 'M301 690L331 690L334 744L304 742Z'),
+  ...shoe({ x: 291, y: 757, angle: 16 }),
   // 寬褲：左邊是往後踢、膝蓋彎起來的腳，右邊是站直的腳
   part(
     'couple-pants-groom',
@@ -54,13 +99,9 @@ const groom = [
   fold('couple-pants-groom-fold', 'M302 520C306 580 309 640 306 688'),
   fold('couple-pants-groom-fold', 'M110 478C140 492 175 494 212 478', 4),
   fold('couple-pants-groom-fold', 'M232 400C246 418 256 436 262 452', 4),
-  // 腳踝伸進鞋口裡
-  part('couple-skin', 'M301 690L331 690L334 744L304 742Z'),
-  ...shoe({ x: 291, y: 757, angle: 16 }),
-  // 舉起來的手（握拳），手肘以上被袖子蓋住；手臂一路伸進拳頭裡，拳頭疊在上面，手腕才不會斷開（之前手臂停在拳頭下緣，中間露出一條天空）
-  part('couple-skin', 'M252 172C240 140 226 100 211 50L235 45C249 94 268 132 288 160Z'),
-  part('couple-skin', 'M204 40C202 26 212 18 224 18C237 18 244 27 243 40C242 50 236 58 226 59C214 60 205 52 204 40Z'),
-  fold('couple-skin-shade', 'M212 34C219 29 228 29 236 33', 3),
+  // 舉起來揮手的那隻手，手肘以上被袖子蓋住；手臂一路伸進手掌裡，手掌疊在上面，手腕才不會斷開（之前手臂停在拳頭下緣，中間露出一條天空）
+  part('couple-skin', 'M252 172C241 142 229 106 217 67L238 61C251 100 268 134 288 160Z'),
+  ...openHand(HAND),
   /*
    * 寬鬆短袖上衣，下襬斜斜的（身體往左傾）。舉起的那隻袖子比手臂寬一點，腋下往內收一個凹口，跟右邊的袖子一樣看得出袖子的輪廓（原本被斜背包蓋住）。
    * 背後從下襬斜斜直直地往上接到腋下，只微微鼓一點（原本往左鼓成一個圓弧，像駝背）
@@ -132,6 +173,9 @@ const bride = [
   // 往後勾的那隻腳：褲管露出一小截腳踝，接到鞋口；鞋子鞋頭朝下、鞋底朝外（鞋口直接貼著褲管試過，看起來像沒有腳）
   part('couple-skin', 'M738 577L768 574L772 600L740 604Z'),
   ...shoe({ x: 797, y: 566, angle: 82, scale: 0.88, flip: true }),
+  // 踮著腳尖往左下踩，鞋跟抬在右上；腳踝一樣藏在褲管後面
+  part('couple-skin', 'M572 770L600 765L605 800L579 802Z'),
+  ...shoe({ x: 624, y: 815, angle: 165, scale: 0.85, flip: true }),
   part(
     'couple-pants-bride',
     'M546 478C525 520 515 580 518 640C520 700 528 750 536 780C570 782 610 770 648 750C630 700 612 640 600 592C620 630 650 660 690 668C715 672 735 676 752 678L745 575C715 580 700 582 690 580C675 540 665 500 658 470C620 475 580 478 546 478Z',
@@ -139,9 +183,6 @@ const bride = [
   fold('couple-pants-bride-fold', 'M562 560C566 620 571 680 576 740'),
   fold('couple-pants-bride-fold', 'M640 622C670 642 700 652 732 656', 4),
   fold('couple-pants-bride-fold', 'M592 500C598 530 600 560 600 588', 4),
-  part('couple-skin', 'M572 770L600 765L605 800L579 802Z'),
-  // 踮著腳尖往左下踩，鞋跟抬在右上
-  ...shoe({ x: 624, y: 815, angle: 165, scale: 0.85, flip: true }),
   // 往左牽著新郎的手、往右上舉著捧花的手（捧花先畫，手臂壓在包裝紙前面）
   part('couple-skin', 'M551 365C519 396 486 428 453 459L467 473C500 441 532 410 565 379Z'),
   part('couple-skin', 'M716 330C745 315 775 295 798 272L812 284C790 305 760 335 727 368Z'),
@@ -171,53 +212,59 @@ const brideTop = [
    * 沒有瀏海的直髮短鮑伯（參考側面把頭髮塞到耳後的照片）：額頭露出來，前面的頭髮從髮際線往後梳、頭頂微微蓬起，
    * 髮際線沿著太陽穴斜斜退到耳朵上方，頭髮塞到耳後，從耳朵後面直直垂到肩膀上方、下緣一刀剪齊。
    * 耳朵跟新郎一樣是深一點的膚色，壓在髮緣上，整個露出來。之前是齊瀏海停在眼鏡上緣、兩側蓋住耳朵的法式鮑伯頭；
-   * 耳朵前面垂一撮細髮絲也試過，縮小之後像臉上劃了一道黑線，拿掉了
+   * 耳朵前面垂一撮細髮絲也試過，縮小之後像臉上劃了一道黑線，拿掉了。頭頂原本有一道淺色的反光，看起來像白髮，也拿掉了，頭髮整片平塗
    */
   part(
     'couple-hair',
     'M640 273C644 264 636 255 617 254C590 252 563 262 556 286C551 305 553 326 557 346L607 350C604 340 603 330 604 320C606 312 607 304 608 298C612 290 626 278 640 273Z',
   ),
-  part('couple-hair-shine', 'M584 270C596 261 613 257 628 261C613 262 598 266 589 274Z'),
   part('couple-skin-shade', 'M598 298C604 295 610 301 608 310C606 318 599 318 597 312C595 306 595 301 598 298Z'),
 ].map(shrinkPart)
 
-// 捧花：米色包裝紙裡一大團綠葉，邊緣伸出幾片尖葉子，點綴小白花
+/*
+ * 捧花：米色包裝紙裡一大團綠葉，邊緣伸出幾片尖葉子，點綴小白花。
+ * 包裝紙往下收到拳頭握著的地方最細，拳頭下面再露出一截、微微張開，下緣剪成長短不一的鋸齒（圓滑的弧線太整齊）。
+ * 之前一路收窄到底，拳頭握在快到底的地方，底下幾乎沒有紙，花像要從紙筒脫出去
+ */
 const bouquet = {
-  wrap: part('couple-wrap', 'M784 212C805 202 838 206 850 220L824 304C816 310 804 309 798 302Z'),
+  wrap: part(
+    'couple-wrap',
+    'M784 212C805 202 838 206 850 220L823 276L831 322L826 330L820 325L813 334L806 327L797 332L789 324L801 276Z',
+  ),
   leaves: [
     ...[
-      'M800 192C786 180 778 166 776 150',
-      'M832 170C826 156 828 140 836 126',
-      'M880 182C892 168 906 162 920 160',
-      'M900 224C914 230 926 242 932 256',
-      'M792 214C778 220 766 230 760 244',
+      'M780 192C766 180 758 166 756 150',
+      'M812 170C806 156 808 140 816 126',
+      'M860 182C872 168 886 162 900 160',
+      'M880 224C894 230 906 242 912 256',
+      'M772 214C758 220 746 230 740 244',
     ].map((d) => fold('couple-leaf-dark', d, 11)),
     ...[
-      [806, 196, 18],
-      [832, 182, 20],
-      [860, 180, 19],
-      [884, 196, 18],
-      [896, 222, 15],
-      [872, 232, 18],
-      [842, 226, 19],
-      [814, 222, 16],
-      [792, 180, 12],
-      [850, 160, 13],
-      [906, 204, 11],
+      [786, 196, 18],
+      [812, 182, 20],
+      [840, 180, 19],
+      [864, 196, 18],
+      [876, 222, 15],
+      [852, 232, 18],
+      [822, 226, 19],
+      [794, 222, 16],
+      [772, 180, 12],
+      [830, 160, 13],
+      [886, 204, 11],
     ].map(([cx, cy, r]) => part('couple-leaf', circle(cx, cy, r))),
   ],
-  leafMarks: ['M816 210C828 200 842 196 856 198', 'M852 238C866 230 880 228 892 232'].map((d) => fold('couple-leaf-light', d, 4)),
+  leafMarks: ['M796 210C808 200 822 196 836 198', 'M832 238C846 230 860 228 872 232'].map((d) => fold('couple-leaf-light', d, 4)),
   flowers: [
-    [812, 196],
-    [838, 176],
-    [866, 190],
-    [890, 208],
-    [852, 214],
-    [876, 230],
-    [826, 226],
-    [798, 176],
-    [900, 188],
-    [848, 156],
+    [792, 196],
+    [818, 176],
+    [846, 190],
+    [870, 208],
+    [832, 214],
+    [856, 230],
+    [806, 226],
+    [778, 176],
+    [880, 188],
+    [828, 156],
   ].map(([x, y], i) => ({
     petals: Array.from({ length: 5 }, (_, k) => {
       const a = i + (k * 2 * Math.PI) / 5
@@ -259,14 +306,12 @@ const hands = part('couple-skin', 'M432 450C440 442 458 440 470 448C476 458 472 
     <circle class="couple-glasses" cx="399" cy="186" r="7" />
     <path class="couple-glasses" d="M392 186L374 190" />
 
-    <g class="couple-bouquet">
-      <path :class="bouquet.wrap.cls" :d="bouquet.wrap.d" />
-      <path v-for="(p, i) in bouquet.leaves" :key="`l${i}`" :class="p.cls" :d="p.d" />
-      <path v-for="(p, i) in bouquet.leafMarks" :key="`m${i}`" :class="p.cls" :d="p.d" />
-      <g v-for="(f, i) in bouquet.flowers" :key="`f${i}`">
-        <circle v-for="(pt, k) in f.petals" :key="k" class="couple-petal" :cx="pt.cx" :cy="pt.cy" :r="pt.r" />
-        <circle class="couple-flower-center" :cx="f.center.cx" :cy="f.center.cy" :r="f.center.r" />
-      </g>
+    <path :class="bouquet.wrap.cls" :d="bouquet.wrap.d" />
+    <path v-for="(p, i) in bouquet.leaves" :key="`l${i}`" :class="p.cls" :d="p.d" />
+    <path v-for="(p, i) in bouquet.leafMarks" :key="`m${i}`" :class="p.cls" :d="p.d" />
+    <g v-for="(f, i) in bouquet.flowers" :key="`f${i}`">
+      <circle v-for="(pt, k) in f.petals" :key="k" class="couple-petal" :cx="pt.cx" :cy="pt.cy" :r="pt.r" />
+      <circle class="couple-flower-center" :cx="f.center.cx" :cy="f.center.cy" :r="f.center.r" />
     </g>
 
     <path v-for="(p, i) in bride" :key="`b${i}`" :class="p.cls" :d="p.d" />
@@ -305,10 +350,6 @@ const hands = part('couple-skin', 'M432 450C440 442 458 440 470 448C476 458 472 
 
 .couple-hair {
   fill: #2a2422;
-}
-
-.couple-hair-shine {
-  fill: #4a3f3b;
 }
 
 .couple-glasses {
@@ -416,26 +457,5 @@ const hands = part('couple-skin', 'M432 450C440 442 458 440 470 448C476 458 472 
 
 .couple-flower-center {
   fill: #f7d36b;
-}
-
-/* 捧花以握著的手為軸輕輕搖 */
-.couple-bouquet {
-  transform-box: view-box;
-  transform-origin: 811px 276px;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .couple-bouquet {
-    animation: bouquet-sway 2.4s ease-in-out infinite alternate;
-  }
-}
-
-@keyframes bouquet-sway {
-  from {
-    transform: rotate(-4deg);
-  }
-  to {
-    transform: rotate(5deg);
-  }
 }
 </style>

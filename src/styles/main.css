@@ -139,6 +139,14 @@ select {
   fill: #f4a38f;
 }
 
+/*
+ * 循環動畫捲到畫面外就暫停（v-pause-offscreen，見 utils/offscreen.js）：
+ * 各元件的循環動畫在 animation 後面接一行 animation-play-state: var(--loop, running)
+ */
+[data-offscreen] {
+  --loop: paused;
+}
+
 /* ---------- 預留位置（內容補上後可刪除） ---------- */
 .placeholder {
   display: flex;

@@ -9,15 +9,20 @@ import { circle, sketch, sketchBand } from '../utils/sketch.js'
 import { SEA_MARKS } from '../utils/seaMarks.js'
 import { GRAIN_SIZE, grainDot } from '../utils/grain.js'
 import { puffyTree } from '../utils/puffyTree.js'
+import { vPauseOffscreen } from '../utils/offscreen.js'
+import { bubblePath } from '../utils/speechBubble.js'
+import { CAT_SAY } from '../utils/blueCat.js'
 import DrawnCouple from './DrawnCouple.vue'
+import BlueCat from './BlueCat.vue'
 
 const props = defineProps({
   // true：山、海、雲與人物改用程式畫的版本（手繪線條、會流動）；false：原本的插畫圖檔
   drawn: { type: Boolean, default: false },
 })
 
-// 畫布座標裡一格顆粒圖樣該多大，交給共用的 PaintDefs 畫 paint-grain-cover
-const emit = defineEmits(['grain-tile'])
+// 畫布座標裡一格顆粒圖樣該多大，交給共用的 PaintDefs 畫 paint-grain-cover；
+// 進場開始時通知一聲，快捷按鈕上的貓跟首屏的貓同一拍出場（見 SiteNav）
+const emit = defineEmits(['grain-tile', 'ready'])
 
 const scene = ref(null)
 const ready = ref(false)
@@ -55,6 +60,15 @@ onUnmounted(() => {
 })
 
 /*
+ * 首屏的循環動畫（海紋、人物浮動、捧花、貓）捲走就停（見 utils/offscreen.js）。
+ * 首屏落後捲動，往下捲一個首屏高、紙蓋滿畫面時，首屏的下半截其實還在畫面的上半部，只是被紙蓋住；
+ * 那時首屏的下緣剛好在畫面高度的 LAG 處，所以只拿畫面在那條線以下的部分來判斷，紙一蓋滿就停。
+ * 再多扣 1%：剛好捲到婚紗那一區時首屏的下緣正好貼著那條線，貼著也算在畫面上。
+ * 瀏覽器會把百分比換成整數像素（小數捨去），多扣不到 1px 會被捨掉；多扣 1% 是紙的上緣離畫面頂端剩十幾 px 時就停，那一條看不出來
+ */
+const coverMargin = `${-(LAG * 100 + 1)}% 0px 0px 0px`
+
+/*
  * 程式畫版本的構圖：畫布座標與原插畫相同（2079×2943），名字、日期、人物的位置計算可以共用。
  * 形狀不描邊，邊緣帶一點手繪的不規則；亮面與陰影靠漸層與顆粒（見 PaintDefs 的 SHADES），不另外畫線
  */
@@ -73,33 +87,12 @@ function drawCover() {
     list.map(([cx, cy, r], i) => sketch(circle(cx, cy, r), opt(seed + i, { amp: 4, wavelength: 110 })))
   const blob = (d, seed) => sketch(d, opt(seed, { amp: 3, wavelength: 100 }))
   const band = (edge, bottom, seed) => sketchBand(edge, bottom, opt(seed)).fill
-  // 貓很小，抖動跟著縮小，不然耳朵、腳掌會抖得變形
-  const small = (d, seed) => sketch(d, { step: 3, amp: 1, wavelength: 28, seed })
-  const ellipse = (cx, cy, rx, ry) => `M${cx - rx} ${cy}a${rx} ${ry} 0 1 0 ${2 * rx} 0a${rx} ${ry} 0 1 0 ${-2 * rx} 0Z`
-  /*
-   * 貓搭在稜線上的白腳掌，像一顆蒜頭：上面圓圓胖胖，垂過稜線的下緣分成三顆腳趾（中間那顆垂得最低），
-   * 腳趾之間的凹口往上點一筆墨色短線，像蒜瓣的分線。跟著稜線的斜度轉 deg 度
-   */
-  const paw = (cx, cy, deg, seed) => {
-    const a = (deg * Math.PI) / 180
-    const p = (x, y) =>
-      `${(cx + x * Math.cos(a) - y * Math.sin(a)).toFixed(2)} ${(cy + x * Math.sin(a) + y * Math.cos(a)).toFixed(2)}`
-    return {
-      d: sketch(
-        `M${p(-9, 1)}C${p(-9, -5)} ${p(-4, -6.5)} ${p(0, -6.5)}C${p(4, -6.5)} ${p(9, -5)} ${p(9, 1)}` +
-          `C${p(9, 6)} ${p(5, 7)} ${p(3, 4.6)}C${p(2.4, 7.6)} ${p(-2.4, 7.6)} ${p(-3, 4.6)}C${p(-5, 7)} ${p(-9, 6)} ${p(-9, 1)}Z`,
-        { step: 1.5, amp: 0.4, wavelength: 12, seed },
-      ),
-      toes: `M${p(3, 4.4)}Q${p(3.1, 2.6)} ${p(2.3, 1.2)}M${p(-3, 4.4)}Q${p(-3.1, 2.6)} ${p(-2.3, 1.2)}`,
-    }
-  }
   // 樹冠、樹枝、葉子的位置只跟樹冠中心有關，兩種版式只差在樹幹的長度
   const grow = (list) =>
     list.map(({ cy, tall = true, ...t }) => {
       const [wide, high] = [TREE_GROUND.wide, TREE_GROUND.tall].map((y) => puffyTree({ ...t, y, height: y - cy }))
       return { tone: t.tone, tall, mark: wide.mark, layers: { wide: wide.layers, tall: high.layers } }
     })
-  const catPaws = [paw(384, 1887, 5, 86), paw(431, 1893, 5, 87)]
 
   return {
     // 雲只放右半邊：日期在左上角，白字才不會疊在白雲上
@@ -121,45 +114,6 @@ function drawCover() {
       31,
     ),
     sea: band('M-80 2060L2160 2060', BOTTOM, 32),
-    /*
-     * 藍白貓：躲在左邊兩座樹叢中間的凹口，從後面那叢（bushBack）的稜線後面探出頭，臉轉向右邊，從遠方偷看新人。
-     * 頭的下半藏在樹叢後面，兩隻白色的腳掌搭在稜線上；灰藍的毛是人字臉：額頭中間一道白往下分開變成白色的嘴邊，
-     * 到下巴整個變白，嘴巴底下一塊灰藍的花紋。頭探得夠高，嘴巴和花紋才露在稜線上面（白色往下延伸到稜線後面，看不出下緣）。
-     * 在遠方，頭只比新郎的頭大一點；直式螢幕這一段被裁掉，看不到
-     */
-    cat: {
-      /*
-       * 頭和兩隻耳朵（臉轉向右邊，右耳比較靠右後方）。耳朵短短寬寬，耳尖只修掉一點、留一點尖角
-       * （又高又尖的三角形太兇；又高又窄像兔子；耳尖整個修成大圓弧又太軟）
-       */
-      fur: [
-        small('M374 1862C373 1853 377 1844 384 1837.5Q386.5 1834.5 388.5 1837.5C392 1841 395.5 1844 399 1846Z', 80),
-        small('M407 1846C411 1842 415 1839 420 1836.5Q424 1834 426.5 1837C429.5 1842 431 1852 430 1864Z', 81),
-        small(ellipse(402, 1874, 31, 30), 82),
-      ],
-      ears: [
-        small('M381 1853C381 1847 383 1842 386 1840Q387.5 1838.6 388.6 1840.2C390.5 1842.5 392 1845 393 1847Z', 83),
-        small('M413 1845C416 1842 419 1840.5 422 1839Q424 1838 425 1840C426.5 1843.5 426.8 1848 426.5 1854Z', 84),
-      ],
-      /*
-       * 人字臉的白：額頭一道白往下分開，夾著兩隻眼睛；過了臉頰往兩側散開、超出頭的輪廓，下巴才整個是白的
-       * （白嘴邊直直往下的話，左邊的灰一路延伸到下巴）。超出去的部分用頭的形狀裁掉（cover-cat-head）
-       */
-      white: small(
-        'M408 1846C411 1854 415 1860 423 1864C428 1866.5 433 1869 440 1872L440 1910L362 1910L362 1881C372 1877 383 1870 394 1864C401 1860 405 1854 408 1846Z',
-        85,
-      ),
-      /*
-       * 嘴巴底下一塊跟頭一樣灰藍的毛，偏右、跟嘴巴隔一點。像一顆斜斜往右上翹的豆子，邊緣抖得很少，看起來像長在臉上的花紋
-       * （墨色的小圓點太小又像張開的嘴；大一倍、邊緣抖得多像貼上去的一塊；上平下圓擺在嘴巴正下方，又像張開的嘴）
-       */
-      mole: sketch(
-        'M407.5 1882.6C406.6 1880.4 408.4 1878.4 411.2 1878.2C413.2 1878 414.4 1877 416.4 1877.2C418.6 1877.5 419.6 1879.6 418.6 1881.6C417.6 1883.8 415 1884.8 412.4 1885C410.2 1885.2 408.3 1884.6 407.5 1882.6Z',
-        { step: 1.5, amp: 0.4, wavelength: 12, seed: 88 },
-      ),
-      paws: catPaws.map((p) => p.d),
-      toes: catPaws.map((p) => p.toes),
-    },
     bushBack: sketch('M260 1900C380 1860 520 1900 600 1990S640 2140 560 2190L260 2220Z', opt(50)),
     bushFront: sketch('M-80 1700C180 1690 330 1780 380 1920S380 2160 300 2260L-80 2300Z', opt(51)),
     slopeBack: band('M-80 2065C400 2010 800 2080 1200 2180S1900 2330 2160 2355', BOTTOM, 52),
@@ -245,78 +199,6 @@ const SPEAKERS = [
   { name: wedding.bride, tilt: 5, wide: { cx: 830, cy: 55, base: [760, 792], tip: [712, 195] } },
 ]
 
-const lerp = ([ax, ay], [bx, by], t) => [ax + (bx - ax) * t, ay + (by - ay) * t]
-const pt = ([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`
-
-/*
- * 手繪漫畫的對話框：圓角很大的四邊形，四個角的圓弧大小不一（尖角那一側的下角最小，留位置給尖角），
- * 上、左、右三邊微微往外鼓，上緣再歪一點。下緣在 base 兩點之間開口接到尖角 tip，
- * 尖角的兩邊都往下彎：先往下掉、再勾向本人，像一根彎彎的刺
- */
-function bubblePath(cx, cy, w, h, tilt, [b1, b2], tip) {
-  const [x0, x1, y0, y1] = [cx - w / 2, cx + w / 2, cy - h / 2, cy + h / 2]
-  // 依序是左上、右上、右下、左下（順時針）
-  const corners = [
-    [x0, y0 + tilt],
-    [x1, y0 - tilt],
-    [x1, y1],
-    [x0, y1],
-  ]
-  const radii = ((b1 + b2) / 2 > cx ? [0.4, 0.34, 0.22, 0.36] : [0.34, 0.4, 0.36, 0.22]).map((k) => k * h)
-  // 每個角的圓弧從前一邊上距離角 r 的點開始，到下一邊上距離角 r 的點結束
-  const toward = (from, to, r) => lerp(from, to, r / Math.hypot(to[0] - from[0], to[1] - from[1]))
-  const enter = (i) => toward(corners[i], corners[(i + 3) % 4], radii[i])
-  const leave = (i) => toward(corners[i], corners[(i + 1) % 4], radii[i])
-
-  // 從右往左走下緣：右邊的基點先接到尖角，再回到左邊的基點
-  const tail = `L${pt([b2, y1])}${bubbleTail([b1, y1], [b2, y1], tip)}`
-
-  let d = `M${pt(leave(0))}`
-  for (let i = 0; i < 4; i++) {
-    const next = (i + 1) % 4
-    if (i === 2) {
-      d += `${tail}L${pt(enter(next))}`
-    } else {
-      // 邊往外鼓：控制點在邊的中點往外推（順時針走，外側是行進方向往左轉 90 度）
-      const [a, b] = [leave(i), enter(next)]
-      const [ux, uy] = [b[0] - a[0], b[1] - a[1]]
-      const n = Math.hypot(ux, uy)
-      const [mx, my] = lerp(a, b, 0.5)
-      d += `Q${pt([mx + (uy / n) * h * 0.1, my - (ux / n) * h * 0.1])} ${pt(b)}`
-    }
-    d += `Q${pt(corners[next])} ${pt(leave(next))}`
-  }
-  return `${d}Z`
-}
-
-/*
- * 對話框的尖角：從右邊的基點（目前所在的點）接到尖角，再回到左邊的基點。
- * 兩邊都往下彎（彎的方向取跟尖角方向垂直、朝下的那一側），外側（尖角背對本人的那一側）那條彎得多一點
- */
-function bubbleTail(left, right, tip) {
-  const mid = lerp(left, right, 0.5)
-  const [dx, dy] = [tip[0] - mid[0], tip[1] - mid[1]]
-  const len = Math.hypot(dx, dy)
-  const sign = dx >= 0 ? 1 : -1
-  const bow = [(-dy / len) * sign, (dx / len) * sign]
-  const bend = (from, k) => {
-    const [mx, my] = lerp(from, tip, 0.5)
-    return [mx + bow[0] * len * k, my + bow[1] * len * k]
-  }
-  const [outer, inner] = [0.2, 0.12]
-  return (
-    `Q${pt(bend(right, sign > 0 ? inner : outer))} ${pt(tip)}` + `Q${pt(bend(left, sign > 0 ? outer : inner))} ${pt(left)}`
-  )
-}
-
-// 圓圓的對話框（貓的）：一個橢圓，下緣在 a1、a2 兩個角度（度，往下是 90）之間開口接到尖角
-function roundBubblePath(cx, cy, rx, ry, [a1, a2], tip) {
-  const at = (deg) => [cx + rx * Math.cos((deg * Math.PI) / 180), cy + ry * Math.sin((deg * Math.PI) / 180)]
-  const [left, right] = [at(a1), at(a2)]
-  // 從左邊的基點順時針繞過上緣到右邊的基點（大弧），再接尖角
-  return `M${pt(left)}A${rx} ${ry} 0 1 1 ${pt(right)}${bubbleTail(left, right, tip)}Z`
-}
-
 /*
  * 名字拆成單字（驚嘆號要另外收緊），字直接印在對話框裡、跟著框一起彈出來（原本一個字一個字手寫出來，已經拿掉）。
  * order 是對話框第幾拍跳出來（一拍 0.25s，見樣式的 scene__say）：新郎、新娘各佔一拍，新郎的框彈完就換新娘
@@ -339,28 +221,26 @@ const speakers = SPEAKERS.map(({ name, tilt, wide, tall = wide }, order) => {
 /*
  * 偷看的藍白貓也喊一聲「喵！」：等新娘喊完，貓才從稜線後面冒出來，對話框跟著跳出來
  * （order 接在兩人後面多停一拍，貓出場的時間也照這個 order 算，見樣式的 scene__cat）。
- * 座標是首屏畫布（2079×2943），框在貓頭右邊、跟嘴巴差不多高，短短的尖角從左下指向嘴巴旁邊的臉頰
- * （放在貓頭正上方、尖角指向兩耳中間試過，離嘴巴太遠，不像貓在說話；再往右上會在平板上貼到新郎的對話框）。
- * 框是圓圓的小橢圓，剛好包住兩個字（跟名字一樣的圓角四邊形試過，字少框大，太空）；
- * 字級 26 個畫布單位，跟貓一樣照畫布縮放，比名字小一點，像從遠方傳來的。尖角的畫法跟名字的對話框一樣，框線一樣粗
+ * 框的形狀和位置見 utils/blueCat.js 的 CAT_SAY（首屏畫布座標），字級跟貓一樣照畫布縮放。
+ * 直式螢幕看不到首屏的貓，改成快捷按鈕上的貓在喊（見 SiteNav）
  */
-const CAT_SAY = 26
-const catSay = (() => {
-  const start = speakers.length + 1
-  const chars = Array.from('喵！').map((char) => ({ char, punct: char === '！' }))
-  const [cx, cy, tip] = [472, 1838, [435, 1867]]
-  return {
-    order: start,
-    chars,
-    bubble: roundBubblePath(cx, cy, 31, 27, [150, 124], tip),
-    left: `${(cx / 2079) * 100}%`,
-    top: `${(cy / 2943) * 100}%`,
-    fontSize: `calc(var(--canvas-h) * ${CAT_SAY} / 2943)`,
-    origin: `${(tip[0] / 2079) * 100}% ${(tip[1] / 2943) * 100}%`,
-  }
-})()
+const catSay = {
+  order: speakers.length + 1,
+  chars: CAT_SAY.chars,
+  bubble: CAT_SAY.bubble,
+  left: `${(CAT_SAY.at[0] / 2079) * 100}%`,
+  top: `${(CAT_SAY.at[1] / 2943) * 100}%`,
+  fontSize: `calc(var(--canvas-h) * ${CAT_SAY.size} / 2943)`,
+  origin: `${(CAT_SAY.tip[0] / 2079) * 100}% ${(CAT_SAY.tip[1] / 2943) * 100}%`,
+}
 
-// 跟 CSS 的直式斷點（6/5）一致：平板跟手機一樣是直式的構圖，新郎的對話框換位置、樹冠抬高
+// 橫式首屏的貓搭在後面那叢樹叢的稜線上，跟著稜線往右下斜一點
+const CAT_PAWS = [
+  [384, 1887, 5],
+  [431, 1893, 5],
+]
+
+// 跟 CSS 的直式斷點（6/5）一致：平板跟手機一樣是直式的構圖，新郎的對話框換位置、樹冠抬高；首屏的貓只在橫式畫
 const wideQuery = window.matchMedia('(min-aspect-ratio: 6/5)')
 const layout = ref(wideQuery.matches ? 'wide' : 'tall')
 const onLayoutChange = (e) => {
@@ -376,6 +256,7 @@ onMounted(async () => {
   const images = Array.from(scene.value.querySelectorAll('img'))
   await Promise.all([...images.map(waitForLoad), loadFonts()])
   ready.value = true
+  emit('ready')
 })
 
 function loadFonts() {
@@ -401,6 +282,7 @@ function waitForLoad(img) {
   <div ref="cover" class="cover" :class="{ 'is-ready': ready }">
     <section
       ref="scene"
+      v-pause-offscreen="coverMargin"
       class="scene"
       :class="{ 'is-ready': ready, 'scene--drawn': drawn }"
       role="img"
@@ -438,9 +320,12 @@ function waitForLoad(img) {
             <g class="scene__sun-shift">
               <text class="scene__sun-tag" x="1060" y="1790" text-anchor="middle">SAVE THE DATE</text>
               <path id="cover-sun-arc" class="scene__sun-arc" d="M693 2010A367 367 0 0 1 1427 2010" />
-              <!-- 圓點左右用 dx 留空隙；圓點本身比數字中線低，dy 往上提，下一段再拉回來 -->
+              <!--
+                圓點左右用 dx 留空隙；圓點的字比數字小（跟數字一樣大太搶眼），
+                字縮小後圓點會跟著往下掉，dy 往上提到數字的中線，下一段再拉回來
+              -->
               <text class="scene__sun-num" filter="url(#paint-sketch-horizon)">
-                <textPath href="#cover-sun-arc" startOffset="50%" text-anchor="middle">{{ year }}<tspan dx="24" dy="-7">·</tspan><tspan dx="24" dy="7">{{ month }}</tspan><tspan dx="24" dy="-7">·</tspan><tspan dx="24" dy="7">{{ day }}</tspan></textPath>
+                <textPath href="#cover-sun-arc" startOffset="50%" text-anchor="middle">{{ year }}<tspan class="scene__sun-dot" dx="24" dy="-20">·</tspan><tspan dx="24" dy="20">{{ month }}</tspan><tspan class="scene__sun-dot" dx="24" dy="-20">·</tspan><tspan dx="24" dy="20">{{ day }}</tspan></textPath>
               </text>
             </g>
           </g>
@@ -455,25 +340,28 @@ function waitForLoad(img) {
           </g>
         </svg>
 
-        <!-- 中層（會動）：海紋，獨立一層，動畫時不必重畫其他形狀 -->
-        <svg class="scene__canvas scene__canvas--motion" viewBox="0 0 2079 2943" aria-hidden="true">
-          <defs>
-            <!-- 海紋：跟往下捲的海一樣是深藍色的斜短線，圖樣縮成 780 寬，橫式螢幕上的線條大小才跟下面的海差不多 -->
-            <pattern
-              id="cover-sea-marks"
-              width="780"
-              :height="(780 * SEA_MARKS.height) / SEA_MARKS.width"
-              :viewBox="`0 0 ${SEA_MARKS.width} ${SEA_MARKS.height}`"
-              patternUnits="userSpaceOnUse"
-            >
-              <path class="scene__sea-mark" :d="SEA_MARKS.d" />
-            </pattern>
-          </defs>
-          <g class="scene__part scene__part--sea">
-            <!-- 比畫布多一格圖樣寬，往左移一格就能無縫循環 -->
-            <rect class="scene__sea-flow" x="0" y="2070" width="3120" height="1040" fill="url(#cover-sea-marks)" />
-          </g>
-        </svg>
+        <!--
+          中層（會動）：海紋。外框跟畫布一樣大小、一樣裁切，裡面那張 svg 只畫海面（畫布 2070 以下），比畫布寬一格圖樣，
+          整張往左移一格就能無縫循環。動的是 svg 本身，畫好一次交給 GPU 搬；
+          原本動的是 svg 裡面的形狀，手機（尤其 Safari）每一格都要重畫整片海，會發熱
+        -->
+        <div class="scene__canvas scene__sea" aria-hidden="true">
+          <svg class="scene__sea-flow" viewBox="0 2070 3120 873">
+            <defs>
+              <!-- 海紋：跟往下捲的海一樣是深藍色的斜短線，圖樣縮成 780 寬，橫式螢幕上的線條大小才跟下面的海差不多 -->
+              <pattern
+                id="cover-sea-marks"
+                width="780"
+                :height="(780 * SEA_MARKS.height) / SEA_MARKS.width"
+                :viewBox="`0 0 ${SEA_MARKS.width} ${SEA_MARKS.height}`"
+                patternUnits="userSpaceOnUse"
+              >
+                <path class="scene__sea-mark" :d="SEA_MARKS.d" />
+              </pattern>
+            </defs>
+            <rect x="0" y="2070" width="3120" height="873" fill="url(#cover-sea-marks)" />
+          </svg>
+        </div>
 
         <!-- 前層（靜態）：樹叢、草坡 -->
         <svg class="scene__canvas" viewBox="0 0 2079 2943" aria-hidden="true">
@@ -484,46 +372,15 @@ function waitForLoad(img) {
               <path :d="art.slopeBack" />
               <path :d="art.slopeFront" />
             </clipPath>
-            <clipPath id="cover-grain-cat-fur">
-              <path v-for="(d, i) in art.cat.fur" :key="i" :d="d" />
-            </clipPath>
-            <clipPath id="cover-grain-cat-white"><path :d="art.cat.white" /></clipPath>
-            <clipPath id="cover-cat-head"><path :d="art.cat.fur[2]" /></clipPath>
-            <clipPath id="cover-grain-cat-mole"><path :d="art.cat.mole" /></clipPath>
-            <clipPath id="cover-grain-cat-paws">
-              <path v-for="(d, i) in art.cat.paws" :key="i" :d="d" />
-            </clipPath>
           </defs>
           <g class="scene__part scene__part--land">
             <!--
-              藍白貓比樹叢先畫，下半個頭被後面那叢蓋住。毛、白毛各自畫完馬上鋪顆粒，白毛蓋掉底下毛的顆粒；
-              五官很小，不鋪顆粒
+              藍白貓躲在左邊兩座樹叢中間的凹口，從後面那叢的稜線後面探出頭，臉轉向右邊，從遠方偷看新人（頭只比新郎的頭大一點）。
+              比樹叢先畫，下半個頭被後面那叢蓋住。直式螢幕這一段被裁掉，不畫（改成快捷按鈕上的貓，見 SiteNav）。
+              外層管出場（從稜線後面冒出來），內層管之後的探頭、縮頭，兩個動畫才不會搶同一個 transform
             -->
-            <!-- 外層管出場（從稜線後面冒出來），內層管之後的探頭、縮頭，兩個動畫才不會搶同一個 transform -->
-            <g class="scene__cat" :style="{ '--order': catSay.order }">
-              <g class="scene__cat-bob">
-              <path v-for="(d, i) in art.cat.fur" :key="`cf${i}`" class="scene__cat-fur" :d="d" />
-              <rect class="scene__grain" clip-path="url(#cover-grain-cat-fur)" width="100%" height="100%" />
-              <path v-for="(d, i) in art.cat.ears" :key="`ce${i}`" class="scene__cat-ear" :d="d" />
-              <g clip-path="url(#cover-cat-head)">
-                <path class="scene__cat-white" :d="art.cat.white" />
-                <rect class="scene__grain scene__grain--soft" clip-path="url(#cover-grain-cat-white)" width="100%" height="100%" />
-              </g>
-              <circle class="scene__cat-blush" cx="388" cy="1871" r="3.5" />
-              <circle class="scene__cat-blush" cx="427" cy="1871" r="3.5" />
-              <!-- 黃綠的圓眼睛：圓圓的墨色瞳孔和亮點都偏右，眼睛看向新人 -->
-              <circle class="scene__cat-eye" cx="395" cy="1859" r="4" />
-              <circle class="scene__cat-eye" cx="420" cy="1859" r="4" />
-              <circle class="scene__cat-pupil" cx="396" cy="1859.3" r="2.3" />
-              <circle class="scene__cat-pupil" cx="421" cy="1859.3" r="2.3" />
-              <circle class="scene__cat-shine" cx="396.8" cy="1858.2" r="0.9" />
-              <circle class="scene__cat-shine" cx="421.8" cy="1858.2" r="0.9" />
-              <path class="scene__cat-nose" d="M404 1868L412 1868L408 1872.5Z" />
-              <!-- 嘴巴底下一塊灰藍的毛（跟頭一樣是漸層，畫完鋪顆粒），鼻子底下一個小小的 ω 嘴巴 -->
-              <path class="scene__cat-fur" :d="art.cat.mole" />
-              <rect class="scene__grain" clip-path="url(#cover-grain-cat-mole)" width="100%" height="100%" />
-              <path class="scene__cat-mouth" d="M408 1872.5Q406.6 1875.6 404 1874.6M408 1872.5Q409.4 1875.6 412 1874.6" />
-              </g>
+            <g v-if="layout === 'wide'" class="scene__cat" :style="{ '--order': catSay.order }">
+              <g class="scene__cat-bob"><BlueCat /></g>
             </g>
             <!-- 後面那叢先畫，左緣的直線才會被前面的大樹叢蓋住 -->
             <path class="fill-bush" :d="art.bushBack" />
@@ -534,16 +391,14 @@ function waitForLoad(img) {
             <path v-for="(d, i) in art.patchesDeep" :key="`pd${i}`" class="fill-grass-deep" :d="d" />
             <rect class="scene__grain" clip-path="url(#cover-grain-land)" width="100%" height="100%" />
             <!-- 貓的兩隻白腳掌搭在稜線上：畫在樹叢上面，鋪自己的顆粒，底下樹叢的顆粒被腳掌蓋掉，不會疊兩層 -->
-            <g class="scene__cat-paws" :style="{ '--order': catSay.order }">
-              <path v-for="(d, i) in art.cat.paws" :key="`cp${i}`" class="scene__cat-white" :d="d" />
-              <rect class="scene__grain scene__grain--soft" clip-path="url(#cover-grain-cat-paws)" width="100%" height="100%" />
-              <path v-for="(d, i) in art.cat.toes" :key="`ct${i}`" class="scene__cat-toe" :d="d" />
+            <g v-if="layout === 'wide'" class="scene__cat-paws" :style="{ '--order': catSay.order }">
+              <BlueCat part="paws" :paws="CAT_PAWS" />
             </g>
           </g>
         </svg>
 
         <!-- 藍白貓的對話框：疊在風景上，跟畫布一樣大小、一樣裁切，尖角才會一直對著貓 -->
-        <div class="scene__canvas scene__cat-say">
+        <div v-if="layout === 'wide'" class="scene__canvas scene__cat-say">
           <div class="scene__say" :style="{ '--order': catSay.order, transformOrigin: catSay.origin }">
             <svg class="scene__say-frame" viewBox="0 0 2079 2943" aria-hidden="true">
               <path class="scene__say-bubble" :d="catSay.bubble" />
@@ -580,6 +435,7 @@ function waitForLoad(img) {
             </g>
           </g>
         </svg>
+
       </template>
 
       <!-- 原本的插畫：山、海、雲是同一張畫布切出的圖層，疊在同一個框裡就會對齊 -->
@@ -759,56 +615,17 @@ function waitForLoad(img) {
   opacity: 0.45;
 }
 
-/* 偷看新人的藍白貓：毛和白毛是漸層（PaintDefs 的 cat-fur、cat-white），眼睛是黃綠漸層（cat-eye），其他五官平塗；眼睛不描邊（描墨線像戴了黑框） */
-.scene__cat-fur {
-  fill: url(#paint-shade-cat-fur);
+/* 海紋：外框照畫布裁切，裡面那張照畫布座標擺在 2070 以下、寬 3120（比畫布多一格圖樣 780） */
+.scene__sea {
+  overflow: hidden;
 }
 
-.scene__cat-white {
-  fill: url(#paint-shade-cat-white);
-}
-
-.scene__cat-ear {
-  fill: #f4b3bd;
-}
-
-.scene__cat-blush {
-  fill: rgba(240, 130, 140, 0.45);
-}
-
-.scene__cat-eye {
-  fill: url(#paint-shade-cat-eye);
-}
-
-.scene__cat-pupil {
-  fill: #2b2523;
-}
-
-.scene__cat-shine {
-  fill: #fff;
-}
-
-.scene__cat-nose {
-  fill: #ee8e9e;
-}
-
-.scene__cat-mouth {
-  fill: none;
-  stroke: #2b2523;
-  stroke-width: 1.3;
-  stroke-linecap: round;
-}
-
-.scene__cat-toe {
-  fill: none;
-  stroke: #2b2523;
-  stroke-width: 1.1;
-  stroke-linecap: round;
-}
-
-/* 會動的那一層獨立成一個圖層，動畫時只重畫這一層 */
-.scene__canvas--motion {
-  will-change: transform;
+.scene__sea-flow {
+  position: absolute;
+  top: calc(2070 / 2943 * 100%);
+  left: 0;
+  width: calc(3120 / 2079 * 100%);
+  height: calc(873 / 2943 * 100%);
 }
 
 /*
@@ -841,6 +658,10 @@ function waitForLoad(img) {
   font-size: 140px;
   font-weight: 700;
   letter-spacing: 0.05em;
+}
+
+.scene__sun-dot {
+  font-size: 96px;
 }
 
 .scene__sun-tag {
@@ -1110,6 +931,15 @@ function waitForLoad(img) {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /*
+   * 首屏和樹那一層跟著捲動移動，獨立成圖層，捲動時只要搬動、不必重畫。
+   * 支援捲動時間軸的瀏覽器本來就會這樣做；不支援的由 script 每一格改位移，沒有這行的話每一格都要重畫整個首屏
+   */
+  .cover,
+  .scene__canvas--trees {
+    will-change: transform;
+  }
+
   /* 首屏跟著捲動慢半拍（見 script 的 LAG）：捲過一個首屏高的期間，往下補回一半的距離，之後停在那裡跟著頁面捲走 */
   @supports (animation-timeline: scroll()) {
     .cover {
@@ -1162,8 +992,12 @@ function waitForLoad(img) {
     visibility: hidden;
   }
 
-  .scene__sea-flow {
-    animation: sea-flow 44s linear infinite;
+  /* 海紋只有桌機會流：平板、手機（比 1024px 窄）停在原位，省一點循環動畫 */
+  @media (min-width: 1024px) {
+    .scene__sea-flow {
+      animation: sea-flow 44s linear infinite;
+      animation-play-state: var(--loop, running);
+    }
   }
 
   /*
@@ -1181,10 +1015,12 @@ function waitForLoad(img) {
 
   .scene.is-ready .scene__cat-bob {
     animation: cat-peek 3.4s ease-in-out calc(0.65s + var(--order) * 0.25s) infinite alternate;
+    animation-play-state: var(--loop, running);
   }
 
   .scene.is-ready .scene__couple-shadow {
     animation: shadow-breathe-loop 3.6s ease-in-out 0.7s infinite;
+    animation-play-state: var(--loop, running);
   }
 
   .scene.is-ready .scene__layer {
@@ -1210,6 +1046,7 @@ function waitForLoad(img) {
   /* 進場結束（0.7s）後開始上下浮動 */
   .scene.is-ready .scene__couple-body {
     animation: float 3.6s ease-in-out 0.7s infinite;
+    animation-play-state: var(--loop, running);
   }
 
   /* 對話框連同名字從尖角彈出來；新郎喊完，換新娘的對話框跳出來 */
@@ -1271,10 +1108,10 @@ function waitForLoad(img) {
   }
 }
 
-/* 海紋往左移一格（圖樣寬 780）就能無縫循環 */
+/* 海紋往左移一格（圖樣寬 780，是整張 3120 的 1/4）就能無縫循環 */
 @keyframes sea-flow {
   to {
-    transform: translateX(-780px);
+    transform: translateX(-25%);
   }
 }
 

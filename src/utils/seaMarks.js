@@ -1,3 +1,5 @@
+import { noise } from './sakura.js'
+
 /*
  * 海紋：照參考圖描下來的深藍色斜短線，一組一到三筆、往右上斜約 30 度，長短不一，疏疏落落鋪滿整片海。
  * 座標是參考圖的像素（814×1160），各處依自己的比例縮放；線條都離邊緣一小段距離，上下左右重複鋪不會切到
@@ -11,9 +13,30 @@ export const SEA_MARKS = {
 // 海紋的顏色：比海面深一點的海水藍，跟海上標題墊底的顏色相同
 export const SEA_MARK_COLOR = '#2a7fc6'
 
+/*
+ * 疏一點的海紋：一組一到三筆（起點彼此在 GAP 以內的算同一組），照固定的偽亂數整組留下或拿掉，
+ * keep 是大約留下幾成。一組裡的線不拆開，留下來的看起來還是參考圖那樣一小撮一小撮的
+ */
+const GAP = 24
+function thinOut(d, keep) {
+  const strokes = d.match(/M[^M]+/g).map((s) => ({ s, x: +s.match(/M(\d+)/)[1], y: +s.match(/M\d+ (\d+)/)[1] }))
+  const groups = []
+  for (const st of strokes) {
+    const near = groups.find((g) => g.some((o) => Math.hypot(o.x - st.x, o.y - st.y) < GAP))
+    if (near) near.push(st)
+    else groups.push([st])
+  }
+  return groups
+    .filter((_, i) => noise(i, 97) < keep)
+    .flat()
+    .map((st) => st.s)
+    .join('')
+}
+
 // 整張圖樣當成 CSS 背景圖（線寬以參考圖的像素計）
-export function seaMarksImage(strokeWidth = 2.4) {
-  const { width, height, d } = SEA_MARKS
+export function seaMarksImage({ strokeWidth = 2.4, keep = 1 } = {}) {
+  const { width, height } = SEA_MARKS
+  const d = keep < 1 ? thinOut(SEA_MARKS.d, keep) : SEA_MARKS.d
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
     `<path d="${d}" fill="none" stroke="${SEA_MARK_COLOR}" stroke-width="${strokeWidth}" stroke-linecap="round"/></svg>`
