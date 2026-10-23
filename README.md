@@ -89,6 +89,7 @@ cp .env.example .env
 
 ```
 ├─ apps-script/Code.gs          貼到 Apps Script 的後端程式
+├─ public/og.jpg                分享預覽縮圖（首屏截圖，改了首屏要重截）
 ├─ src/
 │  ├─ config.js                 婚禮資訊與選項
 │  ├─ api/rsvp.js               送出資料到 Apps Script
