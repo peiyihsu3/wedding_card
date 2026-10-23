@@ -5,7 +5,7 @@ import mountainUrl from '../assets/mountain.svg'
 import seaUrl from '../assets/sea.svg'
 import cloudUrl from '../assets/cloud.svg'
 import coupleUrl from '../assets/couple.svg'
-import { brush, circle, sketch, sketchBand } from '../utils/sketch.js'
+import { circle, sketch, sketchBand } from '../utils/sketch.js'
 import { SEA_MARKS } from '../utils/seaMarks.js'
 import { GRAIN_SIZE, grainDot } from '../utils/grain.js'
 import { puffyTree } from '../utils/puffyTree.js'
@@ -208,11 +208,6 @@ function drawCover() {
     },
     // 太陽：圓心在山谷下方，只從山後露出一小塊；日期的圓弧與太陽同圓心、半徑大很多，弧度平緩比較好讀
     sun: sketch(circle(1060, 2010, 190), opt(210, { amp: 3, wavelength: 120 })),
-    heartShine: brush('M1350 864q4-14 18-16', { width: 6, step: 3, amp: 0.5, seed: 101 }),
-    heart: blob(
-      'M1330 870C1330 835 1375 830 1380 860C1385 830 1430 835 1430 870C1430 900 1390 925 1380 940C1370 925 1330 900 1330 870Z',
-      100,
-    ),
   }
 }
 
@@ -322,12 +317,13 @@ function roundBubblePath(cx, cy, rx, ry, [a1, a2], tip) {
   return `M${pt(left)}A${rx} ${ry} 0 1 1 ${pt(right)}${bubbleTail(left, right, tip)}Z`
 }
 
-// 名字拆成單字，order 決定第幾個寫出來；兩人之間多停一拍，那一拍讓新娘的對話框跳出來
-let order = 0
-const speakers = SPEAKERS.map(({ name, tilt, wide, tall = wide }) => {
-  const start = order
-  const chars = Array.from(`${name}！`).map((char) => ({ char, order: order++, punct: char === '！' }))
-  order++
+/*
+ * 名字拆成單字（驚嘆號要另外收緊），字直接印在對話框裡、跟著框一起彈出來（原本一個字一個字手寫出來，已經拿掉）。
+ * order 是對話框第幾拍跳出來（一拍 0.25s，見樣式的 scene__say）：新郎、新娘各佔一拍，新郎的框彈完就換新娘
+ * （原本照手寫的節奏，名字有幾個字就等幾拍，拿掉手寫後中間空等太久）
+ */
+const speakers = SPEAKERS.map(({ name, tilt, wide, tall = wide }, order) => {
+  const chars = Array.from(`${name}！`).map((char) => ({ char, punct: char === '！' }))
   // 一個字（含字距）1.12 個字寬，收緊的驚嘆號 0.47，左右再留 0.8 個字寬
   const w = chars.reduce((sum, c) => sum + (c.punct ? 0.35 : 1) + SAY_TRACK, 0) * SAY_SIZE + SAY_SIZE * 1.6
   const place = ({ cx, cy, base, tip }) => ({
@@ -337,12 +333,12 @@ const speakers = SPEAKERS.map(({ name, tilt, wide, tall = wide }) => {
     // 對話框從尖角那裡彈出來
     origin: `${(tip[0] / VIEW.w) * 100}% ${(tip[1] / VIEW.h) * 100}%`,
   })
-  return { order: start, chars, wide: place(wide), tall: place(tall) }
+  return { order, chars, wide: place(wide), tall: place(tall) }
 })
 
 /*
- * 偷看的藍白貓也喊一聲「喵！」：等新娘的名字寫完，貓才從稜線後面冒出來，對話框跟著跳出來
- * （order 接在兩人後面多停兩拍，貓出場的時間也照這個 order 算，見樣式的 scene__cat）。
+ * 偷看的藍白貓也喊一聲「喵！」：等新娘喊完，貓才從稜線後面冒出來，對話框跟著跳出來
+ * （order 接在兩人後面多停一拍，貓出場的時間也照這個 order 算，見樣式的 scene__cat）。
  * 座標是首屏畫布（2079×2943），框在貓頭右邊、跟嘴巴差不多高，短短的尖角從左下指向嘴巴旁邊的臉頰
  * （放在貓頭正上方、尖角指向兩耳中間試過，離嘴巴太遠，不像貓在說話；再往右上會在平板上貼到新郎的對話框）。
  * 框是圓圓的小橢圓，剛好包住兩個字（跟名字一樣的圓角四邊形試過，字少框大，太空）；
@@ -350,8 +346,8 @@ const speakers = SPEAKERS.map(({ name, tilt, wide, tall = wide }) => {
  */
 const CAT_SAY = 26
 const catSay = (() => {
-  const start = order + 2
-  const chars = Array.from('喵！').map((char, i) => ({ char, order: start + 1 + i, punct: char === '！' }))
+  const start = speakers.length + 1
+  const chars = Array.from('喵！').map((char) => ({ char, punct: char === '！' }))
   const [cx, cy, tip] = [472, 1838, [435, 1867]]
   return {
     order: start,
@@ -364,8 +360,8 @@ const catSay = (() => {
   }
 })()
 
-// 跟 CSS 的橫式斷點（4/5）一致：直式螢幕新郎的對話框換位置
-const wideQuery = window.matchMedia('(min-aspect-ratio: 4/5)')
+// 跟 CSS 的直式斷點（6/5）一致：平板跟手機一樣是直式的構圖，新郎的對話框換位置、樹冠抬高
+const wideQuery = window.matchMedia('(min-aspect-ratio: 6/5)')
 const layout = ref(wideQuery.matches ? 'wide' : 'tall')
 const onLayoutChange = (e) => {
   layout.value = e.matches ? 'wide' : 'tall'
@@ -434,9 +430,9 @@ function waitForLoad(img) {
           </g>
           <!--
             日出：遠山中間的山谷升起一顆太陽，日期沿著太陽外圍排成圓弧，SAVE THE DATE 寫在太陽裡；
-            整組在山的後面，太陽下半部被山擋住，人物在前面。偏方的螢幕（長寬比 4/5～6/5）山谷被人物擋滿，改用左上角的日期
+            整組在山的後面，太陽下半部被山擋住，人物在前面
           -->
-          <g class="scene__part scene__part--date scene__sun-date">
+          <g class="scene__part scene__part--date">
             <path class="scene__sun" :d="art.sun" />
             <rect class="scene__grain scene__grain--soft" clip-path="url(#cover-grain-sun)" width="100%" height="100%" />
             <g class="scene__sun-shift">
@@ -459,7 +455,7 @@ function waitForLoad(img) {
           </g>
         </svg>
 
-        <!-- 中層（會動）：海紋、愛心、小鳥，獨立一層，動畫時不必重畫其他形狀 -->
+        <!-- 中層（會動）：海紋，獨立一層，動畫時不必重畫其他形狀 -->
         <svg class="scene__canvas scene__canvas--motion" viewBox="0 0 2079 2943" aria-hidden="true">
           <defs>
             <!-- 海紋：跟往下捲的海一樣是深藍色的斜短線，圖樣縮成 780 寬，橫式螢幕上的線條大小才跟下面的海差不多 -->
@@ -476,17 +472,6 @@ function waitForLoad(img) {
           <g class="scene__part scene__part--sea">
             <!-- 比畫布多一格圖樣寬，往左移一格就能無縫循環 -->
             <rect class="scene__sea-flow" x="0" y="2070" width="3120" height="1040" fill="url(#cover-sea-marks)" />
-          </g>
-          <g class="scene__part scene__part--sky">
-            <ellipse class="scene__shadow scene__heart-shadow" cx="1380" cy="1020" rx="42" ry="9" />
-            <g class="scene__heart">
-              <path class="fill-heart" :d="art.heart" />
-              <path class="brush-white" :d="art.heartShine" />
-            </g>
-            <ellipse class="scene__shadow" cx="1094" cy="1110" rx="24" ry="5" />
-            <ellipse class="scene__shadow" cx="1157" cy="1166" rx="20" ry="4" />
-            <path class="scene__bird" d="M1060 1000q18-18 32 0q14-18 32 0" />
-            <path class="scene__bird" d="M1132 1058q14-14 25 0q11-14 25 0" />
           </g>
         </svg>
 
@@ -565,11 +550,10 @@ function waitForLoad(img) {
             </svg>
             <p class="scene__say-text" :style="{ left: catSay.left, top: catSay.top, fontSize: catSay.fontSize }">
               <span
-                v-for="c in catSay.chars"
-                :key="c.order"
+                v-for="(c, i) in catSay.chars"
+                :key="i"
                 class="scene__char"
                 :class="{ 'scene__char--punct': c.punct }"
-                :style="{ '--order': c.order }"
               >{{ c.char }}</span>
             </p>
           </div>
@@ -604,7 +588,8 @@ function waitForLoad(img) {
         <img class="scene__layer scene__layer--mountain" :src="mountainUrl" alt="" fetchpriority="high" />
         <img class="scene__layer scene__layer--cloud" :src="cloudUrl" alt="" />
       </template>
-      <p class="scene__date">
+      <!-- 直排的大字日期只有原本的插畫用；程式畫的版本一律是太陽外圍的日期 -->
+      <p v-if="!drawn" class="scene__date">
         <span class="scene__date-num">{{ year }}</span>
         <span class="scene__date-num">{{ month }}</span>
         <span class="scene__date-num">{{ day }}</span>
@@ -628,11 +613,10 @@ function waitForLoad(img) {
             </svg>
             <p class="scene__say-text" :style="{ left: s[layout].left, top: s[layout].top }">
               <span
-                v-for="c in s.chars"
-                :key="c.order"
+                v-for="(c, i) in s.chars"
+                :key="i"
                 class="scene__char"
                 :class="{ 'scene__char--punct': c.punct }"
-                :style="{ '--order': c.order }"
               >{{ c.char }}</span>
             </p>
           </div>
@@ -649,9 +633,9 @@ function waitForLoad(img) {
   --vh: 1vh;
   /* 剛好一個畫面高：第一頁一開始看不到底下婚紗那張紙，往下捲才從畫面下緣進來（見 JourneyBackdrop 的 drawFrame） */
   --scene-h: max(calc(100 * var(--vh)), 320px);
-  /* 疊在插畫底部的快捷按鈕（SiteNav）：離底距離與按鈕高度 */
-  --nav-bottom: 16px;
-  --nav-h: 40px;
+  /* 疊在插畫底部的快捷按鈕（SiteNav）：離底距離與按鈕高度；手機是貼齊畫面底部的白色紙條，連撕紙邊 56px 高 */
+  --nav-bottom: 0px;
+  --nav-h: 56px;
   /* 日期離左右兩側的距離 */
   --side: max(16px, 6vw);
 
@@ -869,25 +853,12 @@ function waitForLoad(img) {
   letter-spacing: 0.35em;
 }
 
-/* 直式螢幕看不到，橫式螢幕才出現 */
-.scene__sun-date {
-  display: none;
-}
-
 /* 流動的海紋：深藍色的斜短線（同 SEA_MARK_COLOR），線寬以圖樣的座標計 */
 .scene__sea-mark {
   fill: none;
   stroke: #2a7fc6;
   stroke-width: 2.4px;
   stroke-linecap: round;
-}
-
-.scene__bird {
-  fill: none;
-  stroke: #6b86a0;
-  stroke-width: 6px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 /* 首屏的樹（見 puffyTree.js）：顏色照參考網站的樹，再做成漸層（PaintDefs 的 SHADES）；樹枝細，用樹幹漸層的中間色；線寬以畫布座標計 */
@@ -931,13 +902,6 @@ function waitForLoad(img) {
   stroke: #2b2523;
   stroke-width: 4.5px;
   stroke-linecap: round;
-}
-
-/* 飄在空中的東西下方都有一塊平塗的影子，看起來才有浮起來的立體感 */
-.scene__shadow {
-  fill: rgba(40, 100, 150, 0.2);
-  transform-box: fill-box;
-  transform-origin: center;
 }
 
 .scene__couple {
@@ -1024,9 +988,9 @@ function waitForLoad(img) {
 }
 
 /*
- * 大字日期：年、月、日直排放大，下方接小字 SAVE THE DATE，放在左上角、靠左對齊；疊在雲上、人物後面。
+ * 原本的插畫（?painted）才有的大字日期：年、月、日直排放大，下方接小字 SAVE THE DATE，放在左上角、靠左對齊；疊在雲上、人物後面。
  * 圓體粗字、黃色字加深色外框，行距與字距放寬一點。
- * 原本的插畫（?painted）直式螢幕上方正中間是「We Are Married」字樣，日期接在字樣下方（右側有愛心和小鳥，下方是人物舉起的手）
+ * 直式螢幕上方正中間是「We Are Married」字樣，日期接在字樣下方（右側有愛心和小鳥，下方是人物舉起的手）
  */
 .scene__date {
   position: absolute;
@@ -1063,13 +1027,14 @@ function waitForLoad(img) {
 
 /*
  * 程式畫的版本在直式螢幕也照桌機的構圖：山谷裡升起的太陽與日期、山、海、人物，上方不放「We Are Married」字樣。
+ * 直式一路用到長寬比 6/5：平板（連偏方的視窗）跟手機同一套，不另外排一個版本（原本 4/5～6/5 改放左上角的直排日期和天空的愛心、小鳥，已經拿掉）。
  * 整張畫布太寬，放大到畫面寬度剛好看得到中間 900 單位（太陽外圍的日期約 680 寬，兩側留一點空）。
  * 畫布的底貼齊首屏的底；比較寬的直式螢幕（平板）放不下整段，改成日期的上緣（畫布 1500）離畫面頂端留一點空，裁掉下方的草地。
  * 人物照畫布擺：上緣（對話框）對準畫布 1865，跟桌機一樣對話框和舉起的手疊在太陽前面，日期排在上方的天空，
- * 腳下留一段草地。快捷按鈕上方的空間不夠時才把人物往上推。
- * 天空的愛心和小鳥在日期上方很遠的地方，高的手機只露出一半（只看得到愛心的影子），跟桌機一樣不畫
+ * 腳下留一段草地。偏方的視窗看得到的畫布矮，畫布 1865 到快捷按鈕之間放不下人物時把人物縮小，
+ * 往上推會撞到日期；縮到這樣還放不下（很矮的視窗）才往上推
  */
-@media not all and (min-aspect-ratio: 4/5) {
+@media not all and (min-aspect-ratio: 6/5) {
   .scene--drawn {
     --canvas-h: max(var(--scene-h), 100vw * 2943 / 900);
     --canvas-top: clamp(
@@ -1077,19 +1042,22 @@ function waitForLoad(img) {
       3 * var(--vh) - var(--canvas-h) * 1500 / 2943,
       0px
     );
+    /* 寬度用的百分比是畫面寬，按鈕離底的 4% 改寫成首屏高度 */
+    --couple-w: min(
+      88vw,
+      53 * var(--vh),
+      (var(--scene-h) * 0.96 - var(--nav-bottom) - var(--nav-h) - 8px - var(--canvas-top) - var(--canvas-h) * 1865 / 2943) *
+        960 / 864
+    );
     --couple-bottom: max(
       4% + var(--nav-bottom) + var(--nav-h) + 8px,
       var(--scene-h) - var(--canvas-top) - var(--canvas-h) * 1865 / 2943 - var(--couple-w) * 864 / 960
     );
   }
 
-  .scene--drawn .scene__part--sky {
-    display: none;
-  }
-
   /*
    * 樹站在畫布兩側，直式螢幕看不到；左右兩組各自往中間挪（畫布座標），貼著畫面兩側框住人物。用 translate，顆粒不會跟著縮放。
-   * 手機的快捷按鈕幾乎跟畫面一樣寬，樹站在紙的上緣會被擋掉半個樹冠：樹冠的下緣（畫布約 2470）抬到按鈕上緣，
+   * 手機的快捷按鈕是一條跟畫面一樣寬的白色紙條，樹站在紙的上緣會被擋掉半個樹冠：樹冠的下緣（畫布約 2470）抬到按鈕上緣，
    * 樹幹拉長（script 的 TREE_GROUND.tall），從按鈕後面一路長到紙底下，捲動時才看不到樹幹的底
    */
   .scene--drawn .scene__canvas--trees {
@@ -1107,41 +1075,25 @@ function waitForLoad(img) {
   .scene--drawn .scene__tree--wide-only {
     display: none;
   }
-
-  .scene--drawn .scene__date {
-    display: none;
-  }
-
-  .scene--drawn .scene__sun-date {
-    display: inline;
-  }
 }
 
-/* 橫式螢幕：畫面放不下整張插畫，改成對準雲、海與山丘 */
+/* 橫式螢幕：畫面放不下整張插畫，改成對準雲、海與山丘（程式畫的版本 6/5 以下另外對準，見上面的直式螢幕） */
 @media (min-aspect-ratio: 4/5) {
   .scene {
     --focus-y: 0.78;
   }
 
-  /* 上方字樣被裁掉，日期直接放在左上角 */
+  /* 原本的插畫：上方字樣被裁掉，日期直接放在左上角 */
   .scene__date {
     top: max(32px, calc(9 * var(--vh)));
     font-size: clamp(40px, min(7vw, calc(9 * var(--vh))), 96px);
   }
 }
 
-/*
- * 夠寬的橫式螢幕：日期改成山谷裡升起的太陽（再窄一點的話，人物會擋住整個山谷）。
- * 天空的愛心和小鳥在畫面上緣外面，平板橫放時只露出小鳥的影子，不畫
- */
+/* 原本的插畫在夠寬的橫式螢幕不放日期 */
 @media (min-aspect-ratio: 6/5) {
-  .scene__date,
-  .scene__part--sky {
+  .scene__date {
     display: none;
-  }
-
-  .scene__sun-date {
-    display: inline;
   }
 }
 
@@ -1188,70 +1140,54 @@ function waitForLoad(img) {
     animation: rise-in 1.2s var(--ease-out) 1.8s both;
   }
 
-  /* 程式畫的版本：跟圖檔版一樣依序浮現（草坡與遠山 → 海 → 雲），之後海紋流動、雲飄、愛心浮、小鳥拍翅 */
-  .scene__part {
+  /*
+   * 程式畫的版本：風景（雲、山、海、草坡、樹叢）一開始就在原位，不升起也不淡入（原本依序從下面升上來，已經拿掉）；
+   * 進場只動樹、人物、太陽和日期、貓，整段約 1.5s 跑完（原本約 4s，等太久）：
+   * 樹和人物一起升起（0～0.7s），太陽和日期跟著從山後面升上來，對話框依序跳出來，貓最後探頭。之後海紋流動
+   */
+  .scene__canvas--trees .scene__part,
+  .scene__part--date {
     opacity: 0;
   }
 
-  .scene.is-ready .scene__part {
-    animation: rise-in-part 1.2s var(--ease-out) both;
+  .scene.is-ready .scene__canvas--trees .scene__part {
+    animation: rise-in-part 0.7s var(--ease-out) both;
   }
 
-  .scene.is-ready .scene__part--sea {
-    animation-delay: 0.45s;
-  }
-
-  .scene.is-ready .scene__part--clouds {
-    animation-delay: 0.9s;
-  }
-
-  /* 日期跟在人物後面，像日出一樣從山後面慢慢升上來 */
+  /* 日期跟在人物後面，像日出一樣從山後面升上來 */
   .scene.is-ready .scene__part--date {
-    animation: sun-rise 2s var(--ease-out) 1.6s both;
+    animation: sun-rise 1.2s var(--ease-out) 0.2s both;
+  }
+
+  /* 貓所在的樹叢一開始就看得到，圖和字型還沒載完、進場還沒開始前先把貓藏起來，不然會先看到貓趴在稜線上 */
+  .scene:not(.is-ready) .scene__cat,
+  .scene:not(.is-ready) .scene__cat-paws {
+    visibility: hidden;
   }
 
   .scene__sea-flow {
     animation: sea-flow 44s linear infinite;
   }
 
-  .scene__heart {
-    animation: heart-float 3.2s ease-in-out infinite alternate;
-  }
-
   /*
-   * 藍白貓等兩人的名字都寫完才出場：頭從稜線後面冒出來，白腳掌接著搭上稜線，「喵！」的對話框跟著跳出來。
-   * 時間都照貓的對話框的 --order 算（對話框在 1.9s + order × 0.15s 跳出來），頭比對話框早一點開始冒；
+   * 藍白貓等兩人都喊完才出場：頭從稜線後面冒出來，白腳掌接著搭上稜線，「喵！」的對話框跟著跳出來。
+   * 時間都照貓的對話框的 --order 算（對話框在 0.5s + order × 0.25s 跳出來），頭比對話框早一點開始冒；
    * 出場後頭慢慢縮回去一點又探出來，像在偷看，腳掌搭在稜線上不動
    */
   .scene.is-ready .scene__cat {
-    animation: cat-appear 0.3s var(--ease-out) calc(1.65s + var(--order) * 0.15s) both;
+    animation: cat-appear 0.3s var(--ease-out) calc(0.25s + var(--order) * 0.25s) both;
   }
 
   .scene.is-ready .scene__cat-paws {
-    animation: cat-paws 0.18s var(--ease-out) calc(1.85s + var(--order) * 0.15s) both;
+    animation: cat-paws 0.18s var(--ease-out) calc(0.45s + var(--order) * 0.25s) both;
   }
 
   .scene.is-ready .scene__cat-bob {
-    animation: cat-peek 3.4s ease-in-out calc(2.05s + var(--order) * 0.15s) infinite alternate;
-  }
-
-  /* 愛心往上飄時影子跟著縮小變淡 */
-  .scene__heart-shadow {
-    animation: shadow-breathe 3.2s ease-in-out infinite alternate;
+    animation: cat-peek 3.4s ease-in-out calc(0.65s + var(--order) * 0.25s) infinite alternate;
   }
 
   .scene.is-ready .scene__couple-shadow {
-    animation: shadow-breathe-loop 3.6s ease-in-out 2.2s infinite;
-  }
-
-  .scene__bird {
-    transform-box: fill-box;
-    transform-origin: center;
-    animation: bird-flap 0.9s ease-in-out infinite alternate;
-  }
-
-  .scene__bird + .scene__bird {
-    animation-delay: -0.45s;
+    animation: shadow-breathe-loop 3.6s ease-in-out 0.7s infinite;
   }
 
   .scene.is-ready .scene__layer {
@@ -1267,39 +1203,25 @@ function waitForLoad(img) {
   }
 
   /*
-   * 人物在風景升起後（1.5s）出場。人物、名字的對話框和手寫、貓的出場都壓得很快（之前各慢一倍，等太久）：
-   * 人物 0.7s 浮出來，對話框 0.25s 彈出來，一個字 0.28s 寫完、每 0.15s 接下一個字
+   * 人物跟樹一起出場（原本等樹升起後 1.5s 才出來）。人物 0.7s 浮出來，快浮好時（0.5s）對話框連同名字 0.25s 彈出來，
+   * 每 0.25s 一拍（見 script 的 order）
    */
   .scene.is-ready .scene__couple {
-    animation: emerge 0.7s var(--ease-out) 1.5s both;
+    animation: emerge 0.7s var(--ease-out) both;
   }
 
-  /* 進場結束（1.5s + 0.7s）後開始上下浮動 */
+  /* 進場結束（0.7s）後開始上下浮動 */
   .scene.is-ready .scene__couple-body {
-    animation: float 3.6s ease-in-out 2.2s infinite;
+    animation: float 3.6s ease-in-out 0.7s infinite;
   }
 
-  /* 手寫效果：遮罩從每個字的左上往右下掃過，一個字接一個字寫出來 */
-  .scene__char {
-    -webkit-mask-image: linear-gradient(to bottom right, #000 45%, transparent 55%);
-    mask-image: linear-gradient(to bottom right, #000 45%, transparent 55%);
-    -webkit-mask-size: 300% 300%;
-    mask-size: 300% 300%;
-    -webkit-mask-position: 85% 85%;
-    mask-position: 85% 85%;
-  }
-
-  .cover.is-ready .scene__char {
-    animation: write 0.28s ease-in-out calc(2s + var(--order) * 0.15s) both;
-  }
-
-  /* 對話框先從尖角彈出來，再一個字一個字寫名字；新郎喊完，換新娘的對話框跳出來 */
+  /* 對話框連同名字從尖角彈出來；新郎喊完，換新娘的對話框跳出來 */
   .scene__say {
     opacity: 0;
   }
 
   .cover.is-ready .scene__say {
-    animation: pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) calc(1.9s + var(--order) * 0.15s) both;
+    animation: pop 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) calc(0.5s + var(--order) * 0.25s) both;
   }
 }
 
@@ -1323,18 +1245,6 @@ function waitForLoad(img) {
   to {
     opacity: 1;
     transform: none;
-  }
-}
-
-/* 遮罩大小是字的 3 倍，位置 85% 時整個字被遮住、15% 時完全露出 */
-@keyframes write {
-  from {
-    -webkit-mask-position: 85% 85%;
-    mask-position: 85% 85%;
-  }
-  to {
-    -webkit-mask-position: 15% 15%;
-    mask-position: 15% 15%;
   }
 }
 
@@ -1371,12 +1281,6 @@ function waitForLoad(img) {
   }
 }
 
-@keyframes heart-float {
-  to {
-    transform: translateY(-24px);
-  }
-}
-
 /* 以下是畫布單位。出場前整顆頭（連耳朵）藏在稜線後面 */
 @keyframes cat-appear {
   from {
@@ -1398,13 +1302,6 @@ function waitForLoad(img) {
   }
 }
 
-@keyframes shadow-breathe {
-  to {
-    opacity: 0.55;
-    transform: scaleX(0.75);
-  }
-}
-
 /* 跟人物的 float 同步：人物在最高點（50%）時影子最小 */
 @keyframes shadow-breathe-loop {
   0%,
@@ -1414,12 +1311,6 @@ function waitForLoad(img) {
   50% {
     opacity: 0.6;
     transform: scaleX(0.85);
-  }
-}
-
-@keyframes bird-flap {
-  to {
-    transform: scaleY(0.55);
   }
 }
 

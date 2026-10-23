@@ -10,28 +10,16 @@ defineProps({
 })
 
 defineEmits(['edit'])
-
-// 首屏天空裡飄著的那顆愛心（座標移到原點），上面一道白色的反光
-const HEART = 'M0 40C0 5 45 0 50 30C55 0 100 5 100 40C100 70 60 95 50 110C40 95 0 70 0 40Z'
 </script>
 
 <template>
   <!-- 送出後換成同一張明信片，寫上回覆的內容；按鈕跟表單一樣是蠟筆框 -->
   <section class="success" aria-live="polite">
     <PostcardFrame :seed="70">
-      <svg class="success__heart" viewBox="-4 -4 108 118" aria-hidden="true">
-        <path class="fill-heart" :d="HEART" />
-        <path class="success__shine" d="M18 30q4-14 18-16" />
-      </svg>
-      <h2 class="success__title">{{ data.attending ? '期待與您相見' : '感謝您的祝福' }}</h2>
-      <p class="success__message">
-        <template v-if="data.attending">
-          謝謝 {{ data.name }} 的回覆，我們已收到您 {{ data.guests }} 位的出席資訊。
-        </template>
-        <template v-else>
-          謝謝 {{ data.name }} 的回覆，雖然這次無法到場，仍非常感謝您的心意。
-        </template>
-      </p>
+      <h2 class="success__title">
+        謝謝<span class="success__name">{{ data.name }}</span>回覆，<br />
+        {{ data.attending ? '期待與您相見' : '感謝您的祝福' }}
+      </h2>
       <p v-if="updated" class="success__note">已更新您先前的回覆</p>
 
       <SketchFrame class="success__summary" :seed="71" :radius="16">
@@ -78,32 +66,24 @@ const HEART = 'M0 40C0 5 45 0 50 30C55 0 100 5 100 40C100 70 60 95 50 110C40 95 
   text-align: center;
 }
 
-.success__heart {
-  display: block;
-  width: 56px;
-  margin: 0 auto 16px;
-  overflow: visible;
-}
-
-.success__shine {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.85);
-  stroke-width: 6;
-  stroke-linecap: round;
-}
-
-/* 跟表單的標題一樣：深色字、不硬加粗，字距會在最後一個字後面多留一段，左邊補回同樣的寬度才會真的置中 */
+/* 跟表單的標題一樣：深色字、不硬加粗，字距會在最後一個字後面多留一段，左邊補回同樣的寬度才會真的置中；
+   名字長的話在手機上會再折一行，balance 讓折開的兩行差不多長 */
 .success__title {
   padding-left: 0.12em;
   color: #2b2523;
   font-size: 26px;
   font-weight: 400;
+  line-height: 1.5;
   letter-spacing: 0.12em;
+  text-wrap: balance;
 }
 
-.success__message {
-  margin: 12px 0 0;
-  color: var(--text-muted);
+/* 名字放得下就整個排在同一行（Pei-Yi 不要在連字號折開）；英文名字套標題的字距太鬆，收回來。
+   前後不打空白、用 margin 隔開，中文名字才不會隔太開；左邊少一點，是因為前一個字已經帶著標題的字距 */
+.success__name {
+  display: inline-block;
+  margin: 0 0.25em 0 0.15em;
+  letter-spacing: 0.02em;
 }
 
 .success__note {
@@ -116,10 +96,11 @@ const HEART = 'M0 40C0 5 45 0 50 30C55 0 100 5 100 40C100 70 60 95 50 110C40 95 
   font-size: 13px;
 }
 
-/* 回覆內容墊一塊不描邊的白色手繪底，蓋掉方格紙的格線，跟卡紙分開 */
+/* 回覆內容墊一塊不描邊的白色手繪底，蓋掉方格紙的格線，跟卡紙分開；桌機的卡片很寬，拉滿的話標題和內容隔太開、不好對著讀，限制寬度置中 */
 .success__summary {
   --sketch-fill: #fff;
-  margin: 28px 0;
+  max-width: 520px;
+  margin: 28px auto;
 }
 
 .success__list {
@@ -136,7 +117,9 @@ const HEART = 'M0 40C0 5 45 0 50 30C55 0 100 5 100 40C100 70 60 95 50 110C40 95 
   gap: 16px;
 }
 
+/* 飲食禁忌寫很長時讓內容換行，標題不要被擠成好幾行 */
 .success__list dt {
+  flex-shrink: 0;
   color: var(--text-muted);
 }
 
@@ -172,18 +155,6 @@ const HEART = 'M0 40C0 5 45 0 50 30C55 0 100 5 100 40C100 70 60 95 50 110C40 95 
 @media (min-width: 768px) {
   .success__title {
     font-size: 34px;
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .success__heart {
-    animation: heart-float 3.2s ease-in-out infinite alternate;
-  }
-}
-
-@keyframes heart-float {
-  to {
-    transform: translateY(-6px);
   }
 }
 </style>

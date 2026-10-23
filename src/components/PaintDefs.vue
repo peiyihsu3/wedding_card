@@ -50,6 +50,9 @@ const SHADES = [
   { id: 'tree-sakura-pale', from: [0.8, 0], to: [0.2, 1], stops: [[0, '#ffdbe6'], [1, '#f5a6bf']] },
   { id: 'tree-sakura-rose', from: [0.8, 0], to: [0.2, 1], stops: [[0, '#ffb1c8'], [1, '#e26f96']] },
   { id: 'trunk', stops: [[0, '#a06d3b'], [1, '#6f4420']] },
+  // 手機的快捷按鈕在首屏時是綠色紙條（SiteNav），樹叢綠上亮下暗；
+  // 不用草地的黃綠：紙條疊在首屏的草地上，顏色太近看不出撕口，白字也不夠清楚
+  { id: 'nav-strip', stops: [[0, 'var(--scene-bush)'], [1, 'var(--scene-bush-deep)']] },
   // 首屏躲在樹叢後面偷看的藍白貓：灰藍的毛上亮下暗，比後面的遠山灰、深一點才分得開；
   // 耳朵和頭共用首屏畫布座標的漸層，接在一起的地方才不會有接縫。白毛帶一點冷調，往下稍微暗一點
   { id: 'cat-fur', units: 'userSpaceOnUse', from: [0, 1832], to: [0, 1900], stops: [[0, '#8593ab'], [1, '#5e6b85']] },

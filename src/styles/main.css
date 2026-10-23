@@ -91,11 +91,6 @@ select {
 }
 
 /* ---------- 場景插畫共用（OpeningScene、ScenicSection） ---------- */
-/* 細筆觸：兩端收尖的細長色塊（sketch.js 的 brush 畫出來的），目前只剩愛心上的反光 */
-.brush-white {
-  fill: rgba(255, 255, 255, 0.85);
-}
-
 .fill-cloud {
   fill: #fff;
 }

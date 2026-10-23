@@ -153,22 +153,30 @@ export function cutRect(width, height, { seed = 1, amp, radius } = {}) {
   return `M${d.join('').slice(1)}Z`
 }
 
+const DEFAULT_TEAR_WAVES = [
+  [320, 0.35],
+  [90, 0.15],
+]
+
 // 撕開的紙邊：從 x0 到 x1 的一條橫線，從 y 往下最多 depth。兩道長短不同的起伏讓紙邊微微高低不平；
 // 撕口的小塊跟前一段有關聯，一小段一小段地凸出凹進，再加一點細碎的毛邊。
-// 每一點各自隨機深淺的話，鋸齒太平均，像花邊剪刀剪的；也不像 sketch 的手繪線那麼圓滑。回傳開放的路徑
-export function tornEdge(x0, x1, { y = 0, depth = 6, seed = 1 } = {}) {
+// 每一點各自隨機深淺的話，鋸齒太平均，像花邊剪刀剪的；也不像 sketch 的手繪線那麼圓滑。回傳開放的路徑。
+// waves 是起伏的 [len, 佔 depth 的比例]（len 是 sin(x / len)，一個波長約 6.3 倍）；預設很長，看起來只有微微高低。
+// rough 調撕口小塊和毛邊的強弱，調小起伏就比較緩和
+export function tornEdge(x0, x1, { y = 0, depth = 6, seed = 1, waves = DEFAULT_TEAR_WAVES, rough = 1 } = {}) {
   const rand = random(seed)
-  const waves = [
-    [320, 0.35],
-    [90, 0.15],
-  ].map(([len, weight]) => ({ len: len * (0.8 + rand() * 0.4), phase: rand() * Math.PI * 2, amp: depth * weight }))
-  const swell = (x) => waves.reduce((sum, w) => sum + (w.amp * (1 + Math.sin(x / w.len + w.phase))) / 2, 0)
+  const swells = waves.map(([len, weight]) => ({
+    len: len * (0.8 + rand() * 0.4),
+    phase: rand() * Math.PI * 2,
+    amp: depth * weight,
+  }))
+  const swell = (x) => swells.reduce((sum, w) => sum + (w.amp * (1 + Math.sin(x / w.len + w.phase))) / 2, 0)
   let chunk = 0
   const points = []
   for (let x = x0; ; x += 2 + rand() * 6) {
     const at = Math.min(x, x1)
-    chunk = chunk * 0.55 + (rand() - 0.5) * depth * 0.45
-    points.push([at, swell(at) + chunk + rand() * depth * 0.12])
+    chunk = chunk * 0.55 + (rand() - 0.5) * depth * 0.45 * rough
+    points.push([at, swell(at) + chunk + rand() * depth * 0.12 * rough])
     if (at === x1) break
   }
   // 最高的那點貼齊 y，往下超過 depth 的削平

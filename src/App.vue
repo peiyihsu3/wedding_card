@@ -14,8 +14,8 @@ import TrafficInfo from './components/TrafficInfo.vue'
 import RsvpForm from './components/RsvpForm.vue'
 import SuccessCard from './components/SuccessCard.vue'
 
-// 快捷按鈕的項目，id 要和下方 <section> 的 id 一致；手機上四顆要排成一列，
-// 「交通與停車」五個字在寬度 320 的手機已經剛好排滿，其他按鈕別再加字
+// 快捷按鈕的項目，id 要和下方 <section> 的 id 一致；手機上四顆要排成一列（手機上不放圖示），
+// 寬度 320 的手機已經剛好排滿，按鈕的字別再加長
 const sections = [
   { id: 'gallery', label: '寫真', icon: 'camera' },
   { id: 'info', label: '喜帖', icon: 'calendar' },
