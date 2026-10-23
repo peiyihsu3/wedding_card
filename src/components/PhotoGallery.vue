@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { wedding } from '../config.js'
 import { cutRect } from '../utils/sketch.js'
 import CrayonFrame from './CrayonFrame.vue'
@@ -82,6 +82,43 @@ function onTouchEnd(e) {
   if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) go(dx < 0 ? 1 : -1)
 }
 
+/*
+ * 每隔 INTERVAL 自動換下一張。手機會發熱，只在真的有人在看的時候轉：
+ * 輪播有一半以上在畫面內、分頁在前景、沒有在放大查看，減少動態時不轉；鍵盤焦點在輪播裡也先停。
+ * 滑鼠停在上面不停：一般人不知道要把滑鼠移開才會繼續轉，看起來像壞掉。
+ * 整個輪播只有一個 setTimeout，條件不成立就清掉，看不到的時候什麼都不跑。
+ * 換了張（自動或手動）都重新計時，點完箭頭、滑完不會馬上又跳走
+ */
+const INTERVAL = 2500
+const onScreen = ref(false)
+const pageShown = ref(!document.hidden)
+const focusing = ref(false)
+const zoomed = ref(false)
+const reducedMotion = ref(false)
+
+const playing = computed(
+  () => onScreen.value && pageShown.value && !focusing.value && !zoomed.value && !reducedMotion.value,
+)
+
+watch([position, playing], ([, play], _, onCleanup) => {
+  if (!play) return
+  const timer = setTimeout(() => go(1), INTERVAL)
+  onCleanup(() => clearTimeout(timer))
+})
+
+// 用滑鼠點箭頭時 Chrome 也會把焦點放在按鈕上，只有鍵盤移過來的焦點（:focus-visible）才停
+function onFocusIn(e) {
+  focusing.value = e.target.matches(':focus-visible')
+}
+
+function onFocusOut() {
+  focusing.value = false
+}
+
+const onVisibility = () => (pageShown.value = !document.hidden)
+const motion = matchMedia('(prefers-reduced-motion: reduce)')
+const onMotion = () => (reducedMotion.value = motion.matches)
+
 // 點中間那張照片放大查看；內容先畫出來再開，焦點才會落在關閉按鈕上
 const lightbox = ref(null)
 const lightboxPhoto = ref(null)
@@ -105,16 +142,28 @@ function measure() {
 
 // 照片區的大小跟著舞台變（寬度照舞台的寬或畫面的高、高度照 3:4），量舞台就夠了
 let observer = null
+let seen = null
 
 onMounted(() => {
   observer = new ResizeObserver(measure)
   observer.observe(stage.value)
+  seen = new IntersectionObserver(([e]) => (onScreen.value = e.isIntersecting), { threshold: 0.5 })
+  seen.observe(stage.value)
+  document.addEventListener('visibilitychange', onVisibility)
+  motion.addEventListener('change', onMotion)
+  onMotion()
 })
 
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  observer?.disconnect()
+  seen?.disconnect()
+  document.removeEventListener('visibilitychange', onVisibility)
+  motion.removeEventListener('change', onMotion)
+})
 
 async function openLightbox(c) {
   viewing.value = c
+  zoomed.value = true
   await nextTick()
   // 照片載入後才撐出高度，所以也要量
   observer.observe(lightboxPhoto.value)
@@ -130,11 +179,19 @@ function closeLightbox() {
 // 按 Esc 關掉時也會觸發 close，統一在這裡還原頁面捲動
 function onLightboxClose() {
   document.documentElement.style.overflow = ''
+  zoomed.value = false
 }
 </script>
 
 <template>
-  <div class="carousel" role="region" aria-roledescription="carousel" aria-label="婚紗照">
+  <div
+    class="carousel"
+    role="region"
+    aria-roledescription="carousel"
+    aria-label="婚紗照"
+    @focusin="onFocusIn"
+    @focusout="onFocusOut"
+  >
     <div ref="stage" class="carousel__stage" @touchstart.passive="onTouchStart" @touchend.passive="onTouchEnd">
       <!-- 兩側的縮圖點了也會換到中間 -->
       <figure
@@ -156,8 +213,7 @@ function onLightboxClose() {
           class="cutout__photo"
           :tabindex="c.offset === 0 ? 0 : -1"
           :aria-label="`放大查看${c.label}`"
-          @click="!c.offset && openLightbox(c)"
-        >
+          @click="!c.offset && openLightbox(c)"        >
           <span class="cutout__clip" :style="{ clipPath: c.clip }">
             <img class="cutout__img" :src="c.photo" :alt="c.label" loading="lazy" decoding="async" />
           </span>

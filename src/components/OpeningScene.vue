@@ -630,9 +630,11 @@ function waitForLoad(img) {
 
 /*
  * 樹那一層只畫 2000 以下，捲動時移動的圖層小一點。樹跟著紙走（見 trees-lead），這一層不照其他畫布裁切：
- * 畫布座標 2530（桌機橫式首屏的下緣）固定對齊首屏下緣，各種螢幕的樹都站在紙的上緣，樹幹底部（script 的 TREE_GROUND）藏在紙底下
+ * 畫布座標 2530（桌機橫式首屏的下緣）固定對齊首屏下緣，各種螢幕的樹都站在紙的上緣，樹幹底部（script 的 TREE_GROUND）藏在紙底下。
+ * 疊在人物上面：往下捲時人物落後、樹跟著紙往上走，直式螢幕的樹挪到人物兩側，人物的腳不能壓到樹冠上
  */
 .scene__canvas--trees {
+  z-index: 5;
   top: calc(var(--scene-h) - var(--canvas-h) * 530 / 2943);
   height: calc(var(--canvas-h) * 943 / 2943);
 }

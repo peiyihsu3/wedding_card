@@ -6,7 +6,8 @@ import { sketchRoundRect } from '../utils/sketch.js'
  * 桌曆框：白色紙頁不描墨線，外圈一道手繪的黃框（之前是右下方往外錯開的黃色厚邊，改成框；上緣的線圈也拿掉了）。
  * 跟 PictureFrame 一樣量到實際大小才畫，大小變了就重畫。
  *
- * 內容印在最上面那一頁，往下滑離開這一區時，這一頁跟著捲動以上緣為軸慢慢往上翻，露出底下的下一頁（next 插槽，沒給就是空白頁）
+ * 內容印在最上面那一頁，往下滑離開這一區時，這一頁跟著捲動以上緣為軸慢慢往上翻，露出底下的下一頁（next 插槽，沒給就是空白頁）。
+ * 桌機翻頁時日曆停在畫面上，外層（calendar-turn）多撐出一段翻頁用的捲動距離，見 placeTurn
  */
 const props = defineProps({
   seed: { type: Number, default: 1 },
@@ -18,14 +19,34 @@ const LINE = { step: 4, amp: 1.6, wavelength: 70 }
 
 /*
  * 日曆的上緣捲到畫面上緣往下這麼多（快捷按鈕的下方）才開始翻，點快捷按鈕「資訊」跳過來時還停在這條線下面，看得到整頁；
- * 從這裡到日曆的下緣也捲到這條線，剛好翻過去 180 度（CSS 的 view-timeline-inset 與 exit 範圍）
+ * 從這裡再捲一個日曆的高度，剛好翻過去 180 度（CSS 的 view-timeline-inset 與 exit-crossing 範圍）
  */
 const TURN_FROM = 80
 
+const track = ref(null)
 const el = ref(null)
 const body = ref(null)
 const frame = ref(null) // { key, width, height, w, h, stroke, page }
+const turn = ref({ from: TURN_FROM, length: 0, pinned: false })
 let observer = null
+
+/*
+ * 桌機的畫面矮、日曆寬，一邊翻一邊捲的話，下一頁整個露出來時日曆已經捲到畫面最上面，下一頁的字一下就捲走了。
+ * 所以桌機翻頁時日曆停在畫面上（sticky），下面多留一段跟日曆一樣高的捲動距離慢慢翻，翻完才接著往上捲：
+ * 停在畫面中間，但不高過快捷按鈕下方（TURN_FROM），也不低過點「資訊」跳過來時日曆的位置
+ * （區塊上方的留白，就是外層的 offsetTop），不然很高的螢幕一跳過來就已經翻了一截。
+ * 平板、手機照原本一邊翻一邊捲；減少動態時不翻也不停
+ */
+const desktop = window.matchMedia('(min-width: 1024px)')
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+function placeTurn() {
+  const h = el.value.offsetHeight
+  const pinned = desktop.matches && !reduceMotion.matches
+  const middle = Math.round((window.innerHeight - h) / 2)
+  const from = pinned ? Math.max(TURN_FROM, Math.min(middle, track.value.offsetTop)) : TURN_FROM
+  const { value } = turn
+  if (value.from !== from || value.length !== h || value.pinned !== pinned) turn.value = { from, length: h, pinned }
+}
 
 function draw() {
   const { offsetWidth: width, offsetHeight: height } = el.value
@@ -50,67 +71,83 @@ function draw() {
 
 /*
  * 翻頁跟著捲動走：支援捲動時間軸的瀏覽器直接用 CSS 做（見樣式的 calendar-turn），
- * 不支援的才在這裡照捲動距離算翻到哪裡（--turn-at，0–1，跟 CSS 的範圍一樣）。減少動態效果時不翻
+ * 不支援的才在這裡照捲動距離算翻到哪裡（--turn-at，0–1，跟 CSS 的範圍一樣）。減少動態效果時不翻。
+ * 量外層：桌機的日曆黏在畫面上不動，外層才照實際捲動的距離走
  */
-const turnByScript =
-  !CSS.supports('animation-timeline: scroll()') && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+const turnByScript = !CSS.supports('animation-timeline: scroll()') && !reduceMotion.matches
 let turnFrame = 0
 function applyTurn() {
   turnFrame = 0
-  const { top, height } = el.value.getBoundingClientRect()
-  const at = Math.min(1, Math.max(0, (TURN_FROM - top) / height))
+  const { top } = track.value.getBoundingClientRect()
+  const { from, length } = turn.value
+  const at = length ? Math.min(1, Math.max(0, (from - top) / length)) : 0
   body.value.style.setProperty('--turn-at', at.toFixed(3))
 }
 function onTurnScroll() {
   if (!turnFrame) turnFrame = requestAnimationFrame(applyTurn)
 }
 
+// 日曆的大小、畫面的高度變了，重新算停在哪裡、翻多久
+function onResize() {
+  draw()
+  placeTurn()
+  if (turnByScript) onTurnScroll()
+}
+
 onMounted(() => {
-  observer = new ResizeObserver(draw)
+  observer = new ResizeObserver(onResize)
   observer.observe(el.value)
+  window.addEventListener('resize', onResize, { passive: true })
+  placeTurn()
   if (turnByScript) {
     applyTurn()
     window.addEventListener('scroll', onTurnScroll, { passive: true })
-    window.addEventListener('resize', onTurnScroll, { passive: true })
   }
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   window.removeEventListener('scroll', onTurnScroll)
-  window.removeEventListener('resize', onTurnScroll)
+  window.removeEventListener('resize', onResize)
   cancelAnimationFrame(turnFrame)
 })
 </script>
 
 <template>
-  <div ref="el" class="calendar-frame" :style="{ '--turn-from': `${TURN_FROM}px` }">
-    <!-- 底下的下一頁 -->
-    <svg v-if="frame" class="calendar-frame__art" :viewBox="`0 0 ${frame.width} ${frame.height}`" aria-hidden="true">
-      <path class="calendar-frame__under" :d="frame.page" :stroke-width="frame.stroke" />
-    </svg>
-    <!-- 下一頁印的字，跟紙頁一樣大，被上面那一頁蓋住，翻起來才露出來 -->
-    <div v-if="$slots.next" class="calendar-frame__next">
-      <slot name="next" />
-    </div>
-    <!-- 印著內容的這一頁：正面是紙頁與內容，背面是空白的紙背，往上翻過去後才看得到 -->
-    <div ref="body" class="calendar-frame__leaf">
-      <div class="calendar-frame__face">
-        <svg v-if="frame" class="calendar-frame__sheet" :viewBox="`0 0 ${frame.w} ${frame.h}`" aria-hidden="true">
-          <path class="calendar-frame__page" :d="frame.page" :stroke-width="frame.stroke" />
-        </svg>
-        <div class="calendar-frame__body">
-          <slot />
-        </div>
-      </div>
-      <svg
-        v-if="frame"
-        class="calendar-frame__sheet calendar-frame__face--back"
-        :viewBox="`0 0 ${frame.w} ${frame.h}`"
-        aria-hidden="true"
-      >
-        <path class="calendar-frame__page-back" :d="frame.page" :stroke-width="frame.stroke" />
+  <div
+    ref="track"
+    class="calendar-turn"
+    :class="{ 'is-pinned': turn.pinned }"
+    :style="{ '--turn-from': `${turn.from}px`, '--turn-length': `${turn.length}px` }"
+  >
+    <div ref="el" class="calendar-frame">
+      <!-- 底下的下一頁 -->
+      <svg v-if="frame" class="calendar-frame__art" :viewBox="`0 0 ${frame.width} ${frame.height}`" aria-hidden="true">
+        <path class="calendar-frame__under" :d="frame.page" :stroke-width="frame.stroke" />
       </svg>
+      <!-- 下一頁印的字，跟紙頁一樣大，被上面那一頁蓋住，翻起來才露出來 -->
+      <div v-if="$slots.next" class="calendar-frame__next">
+        <slot name="next" />
+      </div>
+      <!-- 印著內容的這一頁：正面是紙頁與內容，背面是空白的紙背，往上翻過去後才看得到 -->
+      <div ref="body" class="calendar-frame__leaf">
+        <div class="calendar-frame__face">
+          <svg v-if="frame" class="calendar-frame__sheet" :viewBox="`0 0 ${frame.w} ${frame.h}`" aria-hidden="true">
+            <path class="calendar-frame__page" :d="frame.page" :stroke-width="frame.stroke" />
+          </svg>
+          <div class="calendar-frame__body">
+            <slot />
+          </div>
+        </div>
+        <svg
+          v-if="frame"
+          class="calendar-frame__sheet calendar-frame__face--back"
+          :viewBox="`0 0 ${frame.w} ${frame.h}`"
+          aria-hidden="true"
+        >
+          <path class="calendar-frame__page-back" :d="frame.page" :stroke-width="frame.stroke" />
+        </svg>
+      </div>
     </div>
   </div>
 </template>
@@ -162,8 +199,10 @@ onBeforeUnmount(() => {
 }
 
 /*
- * 下一頁的字排在偏下的地方：紙頁從下緣開始掀起來，翻到一半時日曆的上半截已經捲到快捷按鈕後面，
- * 整頁看得到的時間很短；排在下半截，翻頁途中一露出來就看得到
+ * 下一頁的字排在偏下的地方：紙頁從下緣開始掀起來，排在下半截，翻頁途中一露出來就看得到；
+ * 平板、手機一邊翻一邊捲，翻到一半時日曆的上半截已經捲到畫面外，整頁看得到的時間很短。
+ * 手機不貼著下緣：原本下方只留 36px，字擠在最下面、上面空一大片，下方多留一段，字的中間落在約六成高的地方。
+ * 桌機翻頁時日曆停在畫面上，整頁都看得到，改成上下置中（見下方 1024px）
  */
 .calendar-frame__next {
   position: absolute;
@@ -171,7 +210,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  padding: 28px 20px 36px;
+  padding: 28px 20px 104px;
 }
 
 .calendar-frame__sheet {
@@ -193,14 +232,33 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: no-preference) {
   /*
-   * 視角從日曆上緣看過去，紙頁翻起來時下緣朝畫面湊近、越過上緣。
-   * 翻頁的範圍：日曆的上緣捲到 --turn-from 開始，下緣也捲到那裡時翻完（exit 範圍，上方內縮 --turn-from）
+   * 翻頁的範圍量外層：外層的上緣捲到 --turn-from 開始，再捲 --turn-length（日曆的高度）翻完（exit-crossing 範圍，上方內縮 --turn-from）。
+   * 平板、手機的外層就是日曆本身，跟原本一樣是日曆的下緣也捲到那條線時翻完
    */
+  .calendar-turn {
+    view-timeline: --calendar-turn block;
+    view-timeline-inset: var(--turn-from) 0px;
+  }
+
+  /*
+   * 桌機：外層多撐出翻頁的捲動距離，日曆在裡面黏在 --turn-from 翻頁，翻完剛好滑到外層的底，接著跟頁面一起往上捲。
+   * 用內容撐、不用 padding：sticky 只在外層的內容框裡移動，padding 那段日曆走不進去
+   */
+  .calendar-turn.is-pinned::after {
+    content: '';
+    display: block;
+    height: var(--turn-length);
+  }
+
+  .calendar-turn.is-pinned .calendar-frame {
+    position: sticky;
+    top: var(--turn-from);
+  }
+
+  /* 視角從日曆上緣看過去，紙頁翻起來時下緣朝畫面湊近、越過上緣 */
   .calendar-frame {
     perspective: 2400px;
     perspective-origin: 50% 0;
-    view-timeline: --calendar-turn block;
-    view-timeline-inset: var(--turn-from) 0px;
   }
 
   /* 不支援捲動時間軸的瀏覽器由 JS 算 --turn-at（0–1） */
@@ -214,7 +272,7 @@ onBeforeUnmount(() => {
     .calendar-frame__leaf {
       animation: calendar-turn linear both;
       animation-timeline: --calendar-turn;
-      animation-range: exit 0% exit 100%;
+      animation-range: exit-crossing 0px exit-crossing var(--turn-length);
     }
   }
 
@@ -245,6 +303,13 @@ onBeforeUnmount(() => {
 
   .calendar-frame__next {
     padding: 40px 40px 56px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .calendar-frame__next {
+    justify-content: center;
+    padding: 40px;
   }
 }
 </style>

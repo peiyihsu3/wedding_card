@@ -108,7 +108,6 @@ function draw({ W, H, zones }) {
   const { landTop } = grove
   const tile = (GRAIN_SIZE * grainDot()).toFixed(2)
   const water = seaGradient({ seaTop, horizon: zones[0].bottom, card: blocks[1], next: blocks[2].top, landTop })
-  const seaBack = `${grainUrl}, linear-gradient(var(--scene-paper) ${seaTop}px, ${water.stops}, var(--scene-grass-deep) ${landTop}px)`
   return {
     W,
     // 地面和樹的幾張 svg 位置與座標都一樣，從 <main> 頂端畫到底部
@@ -135,10 +134,9 @@ function draw({ W, H, zones }) {
      * 婚紗的紙和上岸後的草地是 svg 畫的，草地只畫到收合時的 <main> 底部；常見問題展開多出來的那段露出背景，接著草地最下面的顏色。
      * 顆粒疊在最上層；svg 的色塊不透明，蓋在上面的地方不會疊兩層顆粒（紙、草地自己鋪）。
      * 最上面撕紙邊那一段（tear）背景不畫，撕進去的缺口才露得出後面的首屏。
-     * 不支援 color-mix 的舊瀏覽器整條 background-image 會失效、連海都不見：先給一個沒有 veil 的（none 佔住那一層），Vue 會留最後一個有效的
      */
     style: {
-      backgroundImage: [`none, ${seaBack}`, `${water.veil}, ${seaBack}`],
+      backgroundImage: `${water.veil}, ${grainUrl}, linear-gradient(var(--scene-paper) ${seaTop}px, ${water.stops}, var(--scene-grass-deep) ${landTop}px)`,
       backgroundSize: `auto, ${tile}px ${tile}px, auto`,
       paddingTop: `${frame.tear}px`,
       backgroundClip: 'content-box',
@@ -148,32 +146,69 @@ function draw({ W, H, zones }) {
 
 /*
  * 海由上往下從淡黃變成藍，漸層拉滿整片海：從紙的下緣（horizon）到上岸（landTop，差不多就是回覆那一區的最後）。
- * 紙的下緣是淡黃，到桌曆（card）上緣變成偏白的淡米色，桌曆後面慢慢變成淡藍，
+ * 紙的下緣是淡黃，到桌曆（card）上緣變成偏白的淡米色，到桌曆一半是淡藍，
  * 到回覆（next 是回覆內容的上緣）是原本的亮藍，回覆那一段再慢慢變成海的藍，一直到岸邊。
  * 每個畫面只看得到其中一小段在變，不要擠在一小段（試過，分成好幾條色帶，太突兀）。
  * 桌曆的黃框壓在黃上會不見，桌曆上緣已經是淡米色。藍直接接黃會混成灰綠，中間墊淡米色。
  * 之前試過：金黃到藍（擠在紙和桌曆之間）、粉紅到藍、藍黃粉、藍到淺紫（再到粉紅）、藍到淡黃，換成淡黃到藍
+ *
+ * 每段緩進緩出（smooth），不要直直地接：原本每段都是直線，桌曆下方從淡藍很快變成亮藍、到回覆上緣突然變慢，
+ * 接點折出一條看得見的線；veil 又是同一個淡藍往下退，越靠近回覆顏色變得越快，那條線更明顯。
+ * 淡藍到亮藍是整片海變最多的一段，原本擠在桌曆下緣到回覆之間（桌機只有兩百多 px），淡藍往上提到桌曆一半，拉長慢慢變
+ * （桌機的 card 連翻頁多撐的那段算，一半剛好是桌曆原本的下緣）
  */
 function seaGradient({ seaTop, horizon, card, next, landTop }) {
-  // 淺色的那幾段：[顏色, 位置]；紙的下緣往下捲時會落後（hem-lag），從紙的底（seaTop）就開始是淡黃
-  const glow = [
-    ['yellow', seaTop],
-    ['yellow', horizon],
-    ['cream', card.top],
-    ['pale', card.bottom],
-  ]
-  // 顆粒是整片海共用的一層背景，沒辦法只在一段調淡：淺色那段上面再蓋一層同色、55% 不透明的漸層，顆粒只透出 45%
-  const veil = (name) => `color-mix(in srgb, var(--scene-sea-${name}) 55%, transparent)`
+  // 紙的下緣往下捲時會落後（hem-lag），從紙的底（seaTop）就開始是淡黃
+  const pale = (card.top + card.bottom) / 2
+  const ys = [seaTop, horizon, card.top, pale, next, landTop]
+  const color = smooth(
+    ['yellow', 'yellow', 'cream', 'pale', 'light', ''].map((name, k) => [sceneRgb(`--scene-sea${name && `-${name}`}`), ys[k]]),
+  )
+  // 顆粒是整片海共用的一層背景，沒辦法只在一段調淡：淺色那段上面再蓋一層跟底下同色、55% 不透明的漸層，顆粒只透出 45%，
+  // 從淡藍到回覆上緣慢慢退掉。veil 的顏色每個色標都跟海一樣，只改顆粒透出多少，不改顏色
+  const cover = smooth([[0.55, seaTop], [0.55, pale], [0, next]])
+  // 海紋（座標從 seaTop 起算）在淺色那段不畫，桌曆上緣到回覆上緣慢慢出現；深藍的短線畫在淺色上像刮痕
+  const reveal = smooth([[0, card.top], [1, next]])
+  const at = splitStops(ys)
+  const rgba = (y, a) => `rgba(${color(y).map(Math.round).join(', ')}, ${a.toFixed(3)})`
   return {
-    veil: `linear-gradient(transparent ${seaTop}px, ${glow.map(([c, y]) => `${veil(c)} ${y}px`).join(', ')}, transparent ${next}px)`,
-    stops: [
-      ...glow.map(([c, y]) => `var(--scene-sea-${c}) ${y}px`),
-      `var(--scene-sea-light) ${next}px`,
-      `var(--scene-sea) ${landTop}px`,
-    ].join(', '),
-    // 海紋（座標從 seaTop 起算）在淺色那段不畫，桌曆上緣到回覆上緣慢慢出現；深藍的短線畫在淺色上像刮痕
-    mask: `linear-gradient(transparent ${card.top - seaTop}px, #000 ${next - seaTop}px)`,
+    veil: `linear-gradient(transparent ${seaTop}px, ${at
+      .filter((y) => y <= next)
+      .map((y) => `${rgba(y, cover(y))} ${y.toFixed(1)}px`)
+      .join(', ')}, transparent ${next}px)`,
+    stops: at.map((y) => `${rgba(y, 1)} ${y.toFixed(1)}px`).join(', '),
+    mask: `linear-gradient(${at
+      .filter((y) => y >= card.top && y <= next)
+      .map((y) => `rgba(0, 0, 0, ${reveal(y).toFixed(3)}) ${(y - seaTop).toFixed(1)}px`)
+      .join(', ')})`,
   }
+}
+
+// 把 [數值, 位置] 一段一段接起來（數值是數字或 [r, g, b]），每段用 smoothstep 緩進緩出：接點的地方變化的速度是 0，前後兩段才接得平順
+const ease = (t) => t * t * (3 - 2 * t)
+function smooth(knots) {
+  return (y) => {
+    const k = knots.findIndex(([, at]) => at > y)
+    if (k === 0) return knots[0][0]
+    if (k < 0) return knots[knots.length - 1][0]
+    const [[a, from], [b, to]] = [knots[k - 1], knots[k]]
+    const t = ease((y - from) / (to - from))
+    return Array.isArray(a) ? a.map((v, i) => v + (b[i] - v) * t) : a + (b - a) * t
+  }
+}
+
+// CSS 漸層的色標之間只能直直地接：每段再切成 SPLIT 小段排色標，小段夠短，接起來看起來就是平滑的曲線
+const SPLIT = 12
+const splitStops = (ys) => [
+  ...ys.slice(1).flatMap((to, k) => Array.from({ length: SPLIT }, (_, i) => ys[k] + ((to - ys[k]) * i) / SPLIT)),
+  ys[ys.length - 1],
+]
+
+// 海的顏色照 main.css 的 --scene-sea-*，在這裡照 sRGB 混（跟 CSS 漸層原本的混法一樣）：先用 canvas 換成 #rrggbb 再拆成 [r, g, b]
+const colorProbe = document.createElement('canvas').getContext('2d')
+function sceneRgb(name) {
+  colorProbe.fillStyle = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+  return [1, 3, 5].map((i) => parseInt(colorProbe.fillStyle.slice(i, i + 2), 16))
 }
 
 /*

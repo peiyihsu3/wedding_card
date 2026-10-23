@@ -43,7 +43,7 @@ defineProps({
 /*
  * 婚紗整區剛好一個畫面高，就是那張紙的大小（見 JourneyBackdrop 的 drawFrame），照片在紙上上下置中；
  * 內容比一個畫面高的話（很矮的橫式螢幕），區塊和紙一起撐高。
- * 照片一排撐滿畫面寬，從畫面的右邊滑進來、左邊滑出去（見 PhotoGallery）
+ * 輪播兩側的照片超出畫面的部分由 <main> 裁掉（見 PhotoGallery）
  */
 .scenic--sky {
   display: flex;

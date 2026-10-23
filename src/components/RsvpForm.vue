@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import ChoiceGroup from './ChoiceGroup.vue'
 import NumberStepper from './NumberStepper.vue'
 import PostcardFrame from './PostcardFrame.vue'
@@ -29,8 +29,6 @@ const dietaryOptions = [
   { value: 'yes', label: '有' },
 ]
 
-// 錯誤時依此順序找第一個要捲動到的欄位
-const FIELD_ORDER = ['name', 'phone', 'side', 'attending', 'dietaryNote']
 const PHONE_RE = /^09\d{8}$/
 
 const form = reactive({
@@ -48,7 +46,6 @@ const form = reactive({
 })
 
 const touched = reactive({})
-const submitAttempted = ref(false)
 const submitting = ref(false)
 const submitError = ref('')
 
@@ -67,8 +64,11 @@ const errors = computed(() => {
   return e
 })
 
+// 必填的都填好、格式也對，送出按鈕才能按
+const isValid = computed(() => !Object.keys(errors.value).length)
+
 function errorOf(field) {
-  return submitAttempted.value || touched[field] ? errors.value[field] : ''
+  return touched[field] ? errors.value[field] : ''
 }
 
 // 出席人數調低時，素食與兒童椅不能超過出席人數
@@ -80,25 +80,9 @@ watch(
   },
 )
 
-async function focusFirstError() {
-  const field = FIELD_ORDER.find((f) => errors.value[f])
-  if (!field) return
-  await nextTick()
-  const el = document.getElementById(`field-${field}`)
-  if (!el) return
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' })
-  el.querySelector('input, select')?.focus({ preventScroll: true })
-}
-
 async function onSubmit() {
-  submitAttempted.value = true
+  if (!isValid.value) return
   submitError.value = ''
-
-  if (Object.keys(errors.value).length) {
-    focusFirstError()
-    return
-  }
 
   const attending = isAttending.value
   const payload = {
@@ -136,7 +120,7 @@ async function onSubmit() {
       <!-- <p class="rsvp__deadline">請於 {{ wedding.rsvpDeadline }} 前回覆</p> -->
 
       <div class="row row--2">
-        <div id="field-name" class="field">
+        <div class="field">
           <label class="field__label" for="name">姓名</label>
           <div class="input-frame" :class="{ 'is-invalid': errorOf('name') }">
             <CrayonFrame :seed="40" :radius="14" />
@@ -155,7 +139,7 @@ async function onSubmit() {
           <p v-if="errorOf('name')" id="name-error" class="field__error">{{ errorOf('name') }}</p>
         </div>
 
-        <div id="field-phone" class="field">
+        <div class="field">
           <label class="field__label" for="phone">手機</label>
           <div class="input-frame" :class="{ 'is-invalid': errorOf('phone') }">
             <CrayonFrame :seed="41" :radius="14" />
@@ -177,7 +161,7 @@ async function onSubmit() {
         </div>
       </div>
 
-      <fieldset id="field-side" class="field">
+      <fieldset class="field">
         <legend class="field__label">您是</legend>
         <ChoiceGroup
           v-model="form.side"
@@ -189,7 +173,7 @@ async function onSubmit() {
         <p v-if="errorOf('side')" class="field__error">{{ errorOf('side') }}</p>
       </fieldset>
 
-      <fieldset id="field-attending" class="field">
+      <fieldset class="field">
         <legend class="field__label">是否出席</legend>
         <ChoiceGroup
           v-model="form.attending"
@@ -234,7 +218,7 @@ async function onSubmit() {
             <legend class="field__label">是否有飲食禁忌或過敏</legend>
             <ChoiceGroup v-model="form.hasDietary" name="hasDietary" :options="dietaryOptions" :seed="34" />
             <Transition name="reveal">
-              <div v-if="hasDietary" id="field-dietaryNote" class="rsvp__dietary-note">
+              <div v-if="hasDietary" class="rsvp__dietary-note">
                 <div class="input-frame" :class="{ 'is-invalid': errorOf('dietaryNote') }">
                   <CrayonFrame :seed="42" :radius="14" />
                   <input
@@ -265,7 +249,7 @@ async function onSubmit() {
 
       <p v-if="submitError" class="rsvp__submit-error" role="alert">{{ submitError }}</p>
 
-      <button type="submit" class="rsvp__submit" :disabled="submitting">
+      <button type="submit" class="rsvp__submit" :disabled="submitting || !isValid">
         <CrayonFrame :seed="46" :radius="14" />
         {{ submitting ? '送出中…' : '送出' }}
       </button>
@@ -394,7 +378,8 @@ async function onSubmit() {
 /*
  * 送出按鈕跟輸入框、選項同一套蠟筆框，只有框內塗黃色，跟白底的欄位分開，一眼看出要按哪裡；
  * 平常平平的，滑過時才墊起黃色厚邊、往上浮一點，黃色也淡一點；
- * 按下去收掉厚邊、往下沉，像把按鈕壓回厚邊的位置
+ * 按下去收掉厚邊、往下沉，像把按鈕壓回厚邊的位置。
+ * 必填的還沒填好之前停用、整顆淡一點，填好才變回亮黃色
  */
 .rsvp__submit {
   position: relative;
