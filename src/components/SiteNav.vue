@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
+import CrayonFrame from './CrayonFrame.vue'
 
 const props = defineProps({
   // [{ id, label, icon }]，id 對應頁面上各區塊的 id，也是分享用的錨點（例如 #rsvp）；icon 是下方 icons 的名稱
@@ -28,8 +29,8 @@ function update() {
   const current = targets.filter((el) => el.getBoundingClientRect().top <= mid).pop()
   active.value = current?.id ?? ''
 
-  // 表單卡片捲到按鈕底下就收起來，避免擋住輸入框；捲過表單到下一區再出現
-  const form = document.querySelector('#rsvp .card')?.getBoundingClientRect()
+  // 表單（送出後是結果卡片）捲到按鈕底下就收起來，避免擋住輸入框；捲過表單到下一區再出現
+  const form = document.querySelector('#rsvp form, #rsvp .success')?.getBoundingClientRect()
   const bar = nav.value.getBoundingClientRect()
   hidden.value = !!form && form.top < bar.bottom && form.bottom > bar.top
 }
@@ -62,21 +63,8 @@ onBeforeUnmount(() => {
       :href="`#${s.id}`"
       :aria-current="active === s.id ? 'location' : undefined"
     >
-      <!--
-        手繪外框：先把圓角框抖成歪歪的線，再用細碎的雜訊把邊緣磨毛，像蠟筆畫的。
-        每顆的雜訊種子不同，四顆的歪法才不會一模一樣
-      -->
-      <svg class="quick-nav__frame" aria-hidden="true">
-        <filter :id="`quick-nav-sketch-${i}`" x="-10%" y="-30%" width="120%" height="160%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" :seed="i * 7 + 3" result="wobble" />
-          <feDisplacementMap in="SourceGraphic" in2="wobble" scale="3" xChannelSelector="R" yChannelSelector="G" result="drawn" />
-          <feTurbulence type="fractalNoise" baseFrequency="0.7" :seed="i * 7 + 5" result="grain" />
-          <feDisplacementMap in="drawn" in2="grain" scale="1" xChannelSelector="R" yChannelSelector="G" />
-        </filter>
-        <!-- 目前所在區塊：底下多一層黃色厚邊 -->
-        <rect class="quick-nav__shade" y="5" width="100%" height="100%" rx="12" :filter="`url(#quick-nav-sketch-${i})`" />
-        <rect class="quick-nav__face" width="100%" height="100%" rx="12" :filter="`url(#quick-nav-sketch-${i})`" />
-      </svg>
+      <!-- 目前所在區塊：底下多一層黃色厚邊 -->
+      <CrayonFrame :seed="i * 7 + 3" />
       <span class="quick-nav__icon" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path :d="icons[s.icon]" /></svg>
       </span>
@@ -127,36 +115,8 @@ onBeforeUnmount(() => {
   text-decoration: none;
 }
 
-/* 外框比按鈕內縮 1px，線條有一半畫在框外，大致貼齊按鈕邊緣 */
-.quick-nav__frame {
-  position: absolute;
-  top: 1px;
-  left: 1px;
-  z-index: -1;
-  width: calc(100% - 2px);
-  height: calc(100% - 2px);
-  overflow: visible;
-}
-
-.quick-nav__face,
-.quick-nav__shade {
-  stroke: var(--ink);
-  stroke-width: 2.2;
-}
-
-.quick-nav__face {
-  fill: #fff;
-  transition: fill 0.2s;
-}
-
-.quick-nav__shade {
-  fill: #ffd65a;
-  opacity: 0;
-  transition: opacity 0.2s;
-}
-
-.quick-nav__btn.is-active .quick-nav__shade {
-  opacity: 1;
+.quick-nav__btn.is-active {
+  --crayon-shade: 1;
 }
 
 /* 字距會在最後一個字後面多出一段空白，收回來文字才會置中 */
@@ -181,8 +141,8 @@ onBeforeUnmount(() => {
 }
 
 @media (hover: hover) {
-  .quick-nav__btn:hover .quick-nav__face {
-    fill: #fff8de;
+  .quick-nav__btn:hover {
+    --crayon-face: #fff8de;
   }
 }
 
@@ -217,6 +177,7 @@ onBeforeUnmount(() => {
     padding: 0 18px;
     font-size: 14px;
     letter-spacing: 0.2em;
+    --crayon-stroke: 2.6;
   }
 
   .quick-nav__label {
@@ -226,11 +187,6 @@ onBeforeUnmount(() => {
   .quick-nav__icon svg {
     width: 18px;
     height: 18px;
-  }
-
-  .quick-nav__face,
-  .quick-nav__shade {
-    stroke-width: 2.6;
   }
 }
 </style>

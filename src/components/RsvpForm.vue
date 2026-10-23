@@ -1,6 +1,9 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import ChoiceGroup from './ChoiceGroup.vue'
 import NumberStepper from './NumberStepper.vue'
+import PostcardFrame from './PostcardFrame.vue'
+import CrayonFrame from './CrayonFrame.vue'
 import { maxGuests, wedding } from '../config.js'
 import { isMockMode, submitRsvp } from '../api/rsvp.js'
 
@@ -123,155 +126,177 @@ async function onSubmit() {
 </script>
 
 <template>
-  <form class="card rsvp" novalidate @submit.prevent="onSubmit">
-    <h2 class="rsvp__title">出席回覆</h2>
-    <p class="rsvp__subtitle">請協助填寫以下資訊，方便我們安排座位</p>
-    <p class="rsvp__deadline">請於 {{ wedding.rsvpDeadline }} 前回覆</p>
+  <!--
+    表單寫在一張明信片上，區塊標題寫在明信片外面的左上方、直接寫在海上；
+    輸入框、選項、送出按鈕都跟快捷按鈕同一套蠟筆框
+  -->
+  <form class="rsvp" novalidate @submit.prevent="onSubmit">
+    <h2 class="rsvp__title">婚宴出席回覆</h2>
+    <PostcardFrame :seed="70">
+      <!-- <p class="rsvp__deadline">請於 {{ wedding.rsvpDeadline }} 前回覆</p> -->
 
-    <div class="row row--2">
-      <div id="field-name" class="field">
-        <label class="field__label" for="name">姓名 <span class="req">*</span></label>
-        <input
-          id="name"
-          v-model="form.name"
-          class="input"
-          :class="{ 'is-invalid': errorOf('name') }"
-          type="text"
-          autocomplete="name"
-          placeholder="王小明"
-          :aria-invalid="Boolean(errorOf('name'))"
-          aria-describedby="name-error"
-          @blur="touched.name = true"
-        />
-        <p v-if="errorOf('name')" id="name-error" class="field__error">{{ errorOf('name') }}</p>
-      </div>
-
-      <div id="field-phone" class="field">
-        <label class="field__label" for="phone">手機 <span class="req">*</span></label>
-        <input
-          id="phone"
-          v-model="form.phone"
-          class="input"
-          :class="{ 'is-invalid': errorOf('phone') }"
-          type="tel"
-          inputmode="numeric"
-          autocomplete="tel"
-          maxlength="12"
-          placeholder="0912345678"
-          :aria-invalid="Boolean(errorOf('phone'))"
-          aria-describedby="phone-error"
-          @blur="touched.phone = true"
-        />
-        <p v-if="errorOf('phone')" id="phone-error" class="field__error">{{ errorOf('phone') }}</p>
-      </div>
-    </div>
-
-    <fieldset id="field-side" class="field">
-      <legend class="field__label">您是 <span class="req">*</span></legend>
-      <div class="pills">
-        <label v-for="opt in sideOptions" :key="opt.value" class="pill">
-          <input v-model="form.side" type="radio" name="side" :value="opt.value" />
-          <span>{{ opt.label }}</span>
-        </label>
-      </div>
-      <p v-if="errorOf('side')" class="field__error">{{ errorOf('side') }}</p>
-    </fieldset>
-
-    <fieldset id="field-attending" class="field">
-      <legend class="field__label">是否出席 <span class="req">*</span></legend>
-      <div class="pills">
-        <label v-for="opt in attendingOptions" :key="opt.value" class="pill">
-          <input v-model="form.attending" type="radio" name="attending" :value="opt.value" />
-          <span>{{ opt.label }}</span>
-        </label>
-      </div>
-      <p v-if="errorOf('attending')" class="field__error">{{ errorOf('attending') }}</p>
-    </fieldset>
-
-    <Transition name="reveal">
-      <div v-if="isAttending" class="rsvp__attending">
-        <div class="row row--3">
-          <div class="field">
-            <span id="guests-label" class="field__label">出席人數（含本人）</span>
-            <NumberStepper v-model="form.guests" :min="1" :max="maxGuests" labelledby="guests-label" />
-          </div>
-          <div class="field">
-            <span id="vegetarian-label" class="field__label">素食人數</span>
-            <NumberStepper
-              v-model="form.vegetarian"
-              :min="0"
-              :max="form.guests"
-              labelledby="vegetarian-label"
+      <div class="row row--2">
+        <div id="field-name" class="field">
+          <label class="field__label" for="name">姓名</label>
+          <div class="input-frame" :class="{ 'is-invalid': errorOf('name') }">
+            <CrayonFrame :seed="40" :radius="14" />
+            <input
+              id="name"
+              v-model="form.name"
+              class="input"
+              type="text"
+              autocomplete="name"
+              placeholder="王小明"
+              :aria-invalid="Boolean(errorOf('name'))"
+              aria-describedby="name-error"
+              @blur="touched.name = true"
             />
           </div>
-          <div class="field">
-            <span id="child-seats-label" class="field__label">兒童椅</span>
-            <NumberStepper
-              v-model="form.childSeats"
-              :min="0"
-              :max="form.guests"
-              labelledby="child-seats-label"
-            />
-          </div>
+          <p v-if="errorOf('name')" id="name-error" class="field__error">{{ errorOf('name') }}</p>
         </div>
 
-        <fieldset class="field">
-          <legend class="field__label">是否有飲食禁忌或過敏</legend>
-          <div class="pills">
-            <label v-for="opt in dietaryOptions" :key="opt.value" class="pill">
-              <input v-model="form.hasDietary" type="radio" name="hasDietary" :value="opt.value" />
-              <span>{{ opt.label }}</span>
-            </label>
+        <div id="field-phone" class="field">
+          <label class="field__label" for="phone">手機</label>
+          <div class="input-frame" :class="{ 'is-invalid': errorOf('phone') }">
+            <CrayonFrame :seed="41" :radius="14" />
+            <input
+              id="phone"
+              v-model="form.phone"
+              class="input"
+              type="tel"
+              inputmode="numeric"
+              autocomplete="tel"
+              maxlength="12"
+              placeholder="0912345678"
+              :aria-invalid="Boolean(errorOf('phone'))"
+              aria-describedby="phone-error"
+              @blur="touched.phone = true"
+            />
           </div>
-          <Transition name="reveal">
-            <div v-if="hasDietary" id="field-dietaryNote" class="rsvp__dietary-note">
-              <input
-                id="dietaryNote"
-                v-model="form.dietaryNote"
-                class="input"
-                :class="{ 'is-invalid': errorOf('dietaryNote') }"
-                type="text"
-                maxlength="100"
-                placeholder="例如：不吃牛、海鮮過敏"
-                aria-label="飲食禁忌或過敏的內容"
-                :aria-invalid="Boolean(errorOf('dietaryNote'))"
-                aria-describedby="dietaryNote-error"
-                @blur="touched.dietaryNote = true"
-              />
-              <p v-if="errorOf('dietaryNote')" id="dietaryNote-error" class="field__error">
-                {{ errorOf('dietaryNote') }}
-              </p>
-            </div>
-          </Transition>
-        </fieldset>
+          <p v-if="errorOf('phone')" id="phone-error" class="field__error">{{ errorOf('phone') }}</p>
+        </div>
       </div>
-    </Transition>
 
-    <div class="hp" aria-hidden="true">
-      <label>網站 <input v-model="form.website" type="text" tabindex="-1" autocomplete="off" /></label>
-    </div>
+      <fieldset id="field-side" class="field">
+        <legend class="field__label">您是</legend>
+        <ChoiceGroup
+          v-model="form.side"
+          name="side"
+          :options="sideOptions"
+          :seed="30"
+          :invalid="Boolean(errorOf('side'))"
+        />
+        <p v-if="errorOf('side')" class="field__error">{{ errorOf('side') }}</p>
+      </fieldset>
 
-    <p v-if="submitError" class="rsvp__submit-error" role="alert">{{ submitError }}</p>
+      <fieldset id="field-attending" class="field">
+        <legend class="field__label">是否出席</legend>
+        <ChoiceGroup
+          v-model="form.attending"
+          name="attending"
+          :options="attendingOptions"
+          :seed="32"
+          :invalid="Boolean(errorOf('attending'))"
+        />
+        <p v-if="errorOf('attending')" class="field__error">{{ errorOf('attending') }}</p>
+      </fieldset>
 
-    <button type="submit" class="btn btn--block rsvp__submit" :disabled="submitting">
-      {{ submitting ? '送出中…' : '送出回覆' }}
-    </button>
+      <Transition name="reveal">
+        <div v-if="isAttending" class="rsvp__attending">
+          <div class="row row--3">
+            <div class="field">
+              <span id="guests-label" class="field__label">出席人數（含本人）</span>
+              <NumberStepper v-model="form.guests" :min="1" :max="maxGuests" labelledby="guests-label" :seed="43" />
+            </div>
+            <div class="field">
+              <span id="vegetarian-label" class="field__label">素食人數</span>
+              <NumberStepper
+                v-model="form.vegetarian"
+                :min="0"
+                :max="form.guests"
+                labelledby="vegetarian-label"
+                :seed="44"
+              />
+            </div>
+            <div class="field">
+              <span id="child-seats-label" class="field__label">兒童椅</span>
+              <NumberStepper
+                v-model="form.childSeats"
+                :min="0"
+                :max="form.guests"
+                labelledby="child-seats-label"
+                :seed="45"
+              />
+            </div>
+          </div>
 
-    <p v-if="isMockMode" class="rsvp__mock">模擬模式：尚未設定 VITE_GAS_URL，送出不會寫入試算表</p>
+          <fieldset class="field">
+            <legend class="field__label">是否有飲食禁忌或過敏</legend>
+            <ChoiceGroup v-model="form.hasDietary" name="hasDietary" :options="dietaryOptions" :seed="34" />
+            <Transition name="reveal">
+              <div v-if="hasDietary" id="field-dietaryNote" class="rsvp__dietary-note">
+                <div class="input-frame" :class="{ 'is-invalid': errorOf('dietaryNote') }">
+                  <CrayonFrame :seed="42" :radius="14" />
+                  <input
+                    id="dietaryNote"
+                    v-model="form.dietaryNote"
+                    class="input"
+                    type="text"
+                    maxlength="100"
+                    placeholder="例如：不吃牛、海鮮過敏"
+                    aria-label="飲食禁忌或過敏的內容"
+                    :aria-invalid="Boolean(errorOf('dietaryNote'))"
+                    aria-describedby="dietaryNote-error"
+                    @blur="touched.dietaryNote = true"
+                  />
+                </div>
+                <p v-if="errorOf('dietaryNote')" id="dietaryNote-error" class="field__error">
+                  {{ errorOf('dietaryNote') }}
+                </p>
+              </div>
+            </Transition>
+          </fieldset>
+        </div>
+      </Transition>
+
+      <div class="hp" aria-hidden="true">
+        <label>網站 <input v-model="form.website" type="text" tabindex="-1" autocomplete="off" /></label>
+      </div>
+
+      <p v-if="submitError" class="rsvp__submit-error" role="alert">{{ submitError }}</p>
+
+      <button type="submit" class="rsvp__submit" :disabled="submitting">
+        <CrayonFrame :seed="46" :radius="14" />
+        {{ submitting ? '送出中…' : '送出' }}
+      </button>
+
+      <p v-if="isMockMode" class="rsvp__mock">模擬模式：尚未設定 VITE_GAS_URL，送出不會寫入試算表</p>
+    </PostcardFrame>
   </form>
 </template>
 
 <style scoped>
+/*
+ * 標題寫在明信片外面的正上方、置中，白字直接壓在海上（藍底上白字最清楚）。
+ * 粉圓只有一種字重，700 會被瀏覽器硬加粗、筆畫糊在一起，用原本的字重，也不描邊加粗；
+ * 不套手繪抖動濾鏡，字小、抖起來像歪掉。字距會在最後一個字後面多留一段，左邊補回同樣的寬度才會真的置中
+ */
 .rsvp__title {
-  font-size: 24px;
+  margin: 0 0 16px;
+  padding-left: 0.12em;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: 0.12em;
   text-align: center;
-  letter-spacing: 0.1em;
 }
 
 .rsvp__subtitle {
-  margin: 8px 0 0;
-  color: var(--text-muted);
+  margin: 0;
+  color: var(--text);
   font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
   text-align: center;
 }
 
@@ -280,8 +305,8 @@ async function onSubmit() {
   margin: 16px auto 28px;
   padding: 6px 16px;
   border-radius: 999px;
-  background: var(--rose-gold-soft);
-  color: var(--rose-gold-deep);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
   font-size: 14px;
 }
 
@@ -290,23 +315,23 @@ async function onSubmit() {
   gap: 0 16px;
 }
 
+/* 欄位（輸入框、選項、人數）的框排滿整張明信片，線比快捷按鈕細一點才不會太重；送出按鈕不在欄位裡，維持原本的粗細 */
 .field {
-  margin: 0 0 20px;
+  margin: 0 0 32px;
   padding: 0;
   border: 0;
   min-width: 0;
+  --crayon-stroke: 1.6;
 }
 
 .field__label {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   padding: 0;
-  font-weight: 500;
-  font-size: 15px;
-}
-
-.req {
-  color: var(--rose-gold);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.08em;
 }
 
 .field__error {
@@ -315,16 +340,24 @@ async function onSubmit() {
   font-size: 14px;
 }
 
+/* 輸入框跟選項同一套蠟筆框，表單裡不墊黃色厚邊；填錯時線改成紅色 */
+.input-frame {
+  position: relative;
+  isolation: isolate;
+}
+
+.input-frame.is-invalid {
+  --crayon-ink: var(--danger);
+}
+
 .input {
   display: block;
   width: 100%;
   height: var(--control-height);
-  padding: 0 16px;
-  border: 1px solid var(--milk-tea-deep);
-  border-radius: 10px;
-  background: #fff;
+  padding: 0 18px;
+  border: 0;
+  background: transparent;
   font-size: 16px; /* 小於 16px 時 iOS 聚焦會自動放大 */
-  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .input::placeholder {
@@ -333,68 +366,6 @@ async function onSubmit() {
 
 .input:focus {
   outline: none;
-  border-color: var(--rose-gold);
-  box-shadow: 0 0 0 3px var(--rose-gold-soft);
-}
-
-.input.is-invalid {
-  border-color: var(--danger);
-}
-
-/* 膠囊式單選按鈕 */
-.pills {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.pill {
-  position: relative;
-  cursor: pointer;
-}
-
-.pill input {
-  position: absolute;
-  opacity: 0;
-  inset: 0;
-  margin: 0;
-  cursor: pointer;
-}
-
-.pill span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--control-height);
-  padding: 0 12px;
-  border: 1px solid var(--milk-tea-deep);
-  border-radius: 999px;
-  background: #fff;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
-}
-
-@media (hover: hover) {
-  .pill:hover span {
-    border-color: var(--rose-gold);
-  }
-}
-
-.pill input:checked + span {
-  border-color: var(--rose-gold);
-  background: var(--rose-gold);
-  color: #fff;
-}
-
-.pill input:focus-visible + span {
-  outline: 2px solid var(--rose-gold);
-  outline-offset: 2px;
-}
-
-.rsvp__attending {
-  padding: 20px 16px 0;
-  margin-bottom: 20px;
-  border-radius: var(--radius);
-  background: var(--cream);
 }
 
 .rsvp__dietary-note {
@@ -420,8 +391,50 @@ async function onSubmit() {
   overflow: hidden;
 }
 
+/*
+ * 送出按鈕跟輸入框、選項同一套蠟筆框，只有框內塗黃色，跟白底的欄位分開，一眼看出要按哪裡；
+ * 平常平平的，滑過時才墊起黃色厚邊、往上浮一點，黃色也淡一點；
+ * 按下去收掉厚邊、往下沉，像把按鈕壓回厚邊的位置
+ */
 .rsvp__submit {
-  margin-top: 8px;
+  position: relative;
+  isolation: isolate;
+  display: block;
+  /* 不撐滿整排，置中一顆就好；手機上窄的時候才跟著縮 */
+  width: min(100%, 200px);
+  height: var(--control-height);
+  margin: 8px auto 0;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 14px; /* 讓聚焦外框跟著圓角 */
+  background: transparent;
+  color: #2b2523;
+  /* 整張表單最主要的動作，字比欄位標籤（18px）再大一點 */
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: transform 0.15s;
+  --crayon-face: #ffd65a;
+}
+
+.rsvp__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (hover: hover) {
+  .rsvp__submit:hover:not(:disabled) {
+    transform: translateY(-3px);
+    --crayon-face: #ffe38a;
+    --crayon-shade: 1;
+  }
+}
+
+/* 放在滑過之後，按下去時才蓋得過滑過的墊高 */
+.rsvp__submit:active:not(:disabled) {
+  transform: translateY(2px);
+  --crayon-shade: 0;
 }
 
 .rsvp__submit-error {
@@ -442,7 +455,8 @@ async function onSubmit() {
 
 @media (min-width: 768px) {
   .rsvp__title {
-    font-size: 28px;
+    margin-bottom: 20px;
+    font-size: 30px;
   }
 
   .row--2 {

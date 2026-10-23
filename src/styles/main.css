@@ -5,28 +5,42 @@
   --rose-gold: #b76e79;
   --rose-gold-deep: #9c5763;
   --rose-gold-soft: #f3e3e3;
+  /* 按鈕、聚焦框、選取標記的主色，預設玫瑰金；各區可以換成自己的顏色（回覆區用綠色，見 ScenicSection） */
+  --accent: var(--rose-gold);
+  --accent-deep: var(--rose-gold-deep);
+  --accent-soft: var(--rose-gold-soft);
   --text: #4a3f3a;
   --text-muted: #8a7c74;
   --surface: #fffdf9;
   --danger: #b2453b;
 
-  /* 場景插畫的配色：一區一個平塗色，不描邊，用同色系深一點或淺一點的筆觸帶出形狀 */
+  /* 場景插畫的配色：一區一個顏色，不描邊（插畫另外在這些顏色上做漸層與顆粒，見 PaintDefs 的 SHADES） */
   --scene-sky: #c3e4f5;
   --scene-cloud-back: #e6f3fb;
   --scene-mountain-far: #a9d0ee;
   --scene-mountain: #84bce6;
-  --scene-sea: #3d9be0;
-  --scene-grass: #86bd5a;
-  --scene-grass-deep: #6fae4b;
-  --scene-grass-light: #93c766;
+  /* 婚紗那一區：一張滿版的奶油白紙，平塗再鋪一層淡顆粒（見 JourneyBackdrop 的 drawFrame） */
+  --scene-paper: #fffbf2;
+  /*
+   * 往下捲的海：紙的下緣是淡黃，由上往下經過淡米色、淡藍，到回覆是亮藍（同首屏海面最上面的顏色），到上岸是海的藍
+   *（見 JourneyBackdrop 的 seaGradient）。--scene-sea 也是首屏的海和小剪紙用的藍
+   */
+  --scene-sea-yellow: #f6e2a6;
+  --scene-sea-cream: #eff0e0;
+  --scene-sea-pale: #a9d3f3;
+  --scene-sea-light: #4cb1f2;
+  --scene-sea: #3a9be6;
+  --scene-grass: #7cc447;
+  --scene-grass-deep: #66b03f;
+  --scene-grass-light: #8fd05a;
   --scene-bush: #3f8f50;
   --scene-bush-deep: #2f7a43;
 
   --font-sans: 'Huninn', 'Yuanti TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
 
   --radius: 14px;
-  --control-height: 48px;
-  --shadow: 0 10px 30px rgba(74, 63, 58, 0.08);
+  /* 表單的輸入框、選項、送出按鈕的高度 */
+  --control-height: 50px;
 }
 
 *,
@@ -72,47 +86,12 @@ select {
 }
 
 :focus-visible {
-  outline: 2px solid var(--rose-gold);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
 /* ---------- 場景插畫共用（OpeningScene、ScenicSection） ---------- */
-/*
- * 細筆觸：兩端收尖的細長色塊（sketch.js 的 brush 畫出來的），
- * 顏色比底色深一點或淺一點，取代描邊來帶出亮面與陰影
- */
-.brush-cloud {
-  fill: #d6eaf8;
-}
-
-.brush-mountain-far {
-  fill: #c2e0f5;
-}
-
-.brush-mountain {
-  fill: #6fa8da;
-}
-
-.brush-sea-light {
-  fill: #7cc0ef;
-}
-
-.brush-grass-light {
-  fill: #a2d273;
-}
-
-.brush-grass-mid {
-  fill: #80b957;
-}
-
-.brush-grass-deep {
-  fill: #74ae4d;
-}
-
-.brush-bush-light {
-  fill: #58a868;
-}
-
+/* 細筆觸：兩端收尖的細長色塊（sketch.js 的 brush 畫出來的），目前只剩愛心上的反光 */
 .brush-white {
   fill: rgba(255, 255, 255, 0.85);
 }
@@ -165,79 +144,6 @@ select {
   fill: #f4a38f;
 }
 
-/* ---------- 版面（各區的背景與間距在 ScenicSection.vue） ---------- */
-/* 區塊標題：圓體英文字墊一塊手繪筆刷色塊，下方接中文；顏色由各區用 --title-color、--title-swash 指定 */
-.section__title {
-  margin-bottom: 24px;
-  text-align: center;
-}
-
-.section__title-en {
-  position: relative;
-  z-index: 0;
-  display: inline-block;
-  padding: 0 0.3em;
-  color: var(--title-color, var(--rose-gold-deep));
-  font-family: 'Fredoka', var(--font-sans);
-  font-size: 44px;
-  font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: 0.04em;
-}
-
-/* 筆刷色塊：用遮罩裁出邊緣不規則的形狀，顏色才能跟著各區換 */
-.section__title-en::before {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  inset: 28% 0 0;
-  background: var(--title-swash, var(--rose-gold-soft));
-  -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 60' preserveAspectRatio='none'><path d='M8 34C5 22 12 12 28 11C55 8 92 10 120 7C145 5 172 6 186 13C197 19 197 33 191 42C184 52 168 52 150 51C118 50 92 55 60 54C36 53 16 50 10 43C8 40 8 37 8 34Z'/></svg>")
-    center / 100% 100% no-repeat;
-  mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 60' preserveAspectRatio='none'><path d='M8 34C5 22 12 12 28 11C55 8 92 10 120 7C145 5 172 6 186 13C197 19 197 33 191 42C184 52 168 52 150 51C118 50 92 55 60 54C36 53 16 50 10 43C8 40 8 37 8 34Z'/></svg>")
-    center / 100% 100% no-repeat;
-}
-
-/* 底下的花瓣、海紋從小字後面穿過時會干擾閱讀，在字的周圍墊一圈這一區的底色（--scene-bg）蓋掉 */
-.section__title-zh {
-  display: block;
-  margin-top: 8px;
-  color: var(--title-sub, inherit);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.2em;
-  text-shadow:
-    0 0 2px var(--scene-bg, transparent),
-    0 0 6px var(--scene-bg, transparent),
-    0 0 10px var(--scene-bg, transparent);
-}
-
-.card {
-  background: var(--surface);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 28px 20px;
-}
-
-.divider {
-  width: 64px;
-  height: 1px;
-  margin: 20px auto;
-  border: 0;
-  background: var(--rose-gold);
-}
-
-@media (min-width: 768px) {
-  .card {
-    padding: 40px;
-  }
-
-  .section__title-en {
-    font-size: 60px;
-  }
-}
-
 /* ---------- 預留位置（內容補上後可刪除） ---------- */
 .placeholder {
   display: flex;
@@ -250,50 +156,6 @@ select {
   color: var(--text-muted);
   font-size: 14px;
   text-align: center;
-}
-
-/* ---------- 共用按鈕 ---------- */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: var(--control-height);
-  padding: 0 28px;
-  border: 1px solid var(--rose-gold);
-  border-radius: 999px;
-  background: var(--rose-gold);
-  color: #fff;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-decoration: none;
-  cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.btn--outline {
-  background: transparent;
-  color: var(--rose-gold);
-}
-
-/* 觸控裝置沒有 hover，避免點擊後 hover 樣式卡住 */
-@media (hover: hover) {
-  .btn:hover:not(:disabled) {
-    background: var(--rose-gold-deep);
-  }
-
-  .btn--outline:hover:not(:disabled) {
-    background: var(--rose-gold-soft);
-  }
-}
-
-.btn--block {
-  width: 100%;
 }
 
 @media (prefers-reduced-motion: reduce) {

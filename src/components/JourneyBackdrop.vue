@@ -1,93 +1,89 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { brush, circle, sketch, sketchBand } from '../utils/sketch.js'
-import { PETAL, noise, sakuraCanopy } from '../utils/sakura.js'
+import { nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { sketchBand, tornEdge } from '../utils/sketch.js'
+import { PETAL, noise } from '../utils/sakura.js'
 import { seaMarksImage } from '../utils/seaMarks.js'
-import WalkingCat from './WalkingCat.vue'
+import { puffyTree } from '../utils/puffyTree.js'
+import { GRAIN_SIZE, grainDot, grainImage } from '../utils/grain.js'
+import SeaGull from './SeaGull.vue'
 
 /*
  * 首屏之後一整片連續的風景，鋪在 <main> 裡四個區塊的後面：
- * 首屏的草地往下一小段就是海岸，小貓在岸邊散步（婚紗）；接著一路是海，有海鷗和白雲（資訊），
- * 回覆那一區的右側有一座小島；最後再上岸，岸上的櫻花樹越往下越多，花瓣紛飛（交通）。
+ * 先是婚紗那一區一張滿版的奶油白紙；紙在婚紗與資訊之間結束，下緣是一道往下垂的手繪弧線，蓋在海上，
+ * 接著一路是海，回覆那一段有海鷗；最後上岸，
+ * 櫻花樹越往下越多，花瓣紛飛（交通）。
+ * 跟首屏一樣是噴槍畫的質感：草地、海、樹都是同色系的漸層加一層顆粒（漸層與顆粒圖樣在 PaintDefs），不描邊；
+ * 婚紗的紙平塗一個顏色，再鋪一層淡顆粒。
  *
  * 風景照各區塊實際的位置與大小來畫（座標就是像素，原點在 <main> 的左上角）：
- * 交界都落在兩區內容之間的空白裡，樹也避開卡片、照片等內容；內容的高度變了（字型載入、表單送出）就重畫
+ * 交界都落在兩區內容之間的空白裡，樹也避開卡片、照片等內容；內容的高度變了（字型載入、表單送出）就重畫。
+ * 只有交通的常見問題展開（標了 data-stretch 的元素）不重畫：照收合時的版面畫，內容下方的樹、落花
+ * 再整片往下移撐開的高度（--stretch），樹才不會因為展開收合換位置
  */
 const root = ref(null)
 const scene = shallowRef(null)
 const wavesImage = seaMarksImage()
+// 海和最下面的草地是 <main> 的背景，顆粒用同一張雜訊圖鋪成 CSS 背景（svg 裡的色塊用 paint-grain，大小一樣）
+const grainUrl = `url(${grainImage()})`
 
 // 像素座標用的手繪參數
 const stroke = (seed, extra) => ({ step: 6, amp: 2, wavelength: 70, seed, ...extra })
 const inside = (box, x, y) => x > box.left && x < box.right && y > box.top && y < box.bottom
 
-/* ---------- 重複使用的圖形：只畫一次，之後用 transform 擺到各處 ---------- */
-let shapes = null
-
-function getShapes() {
-  if (shapes) return shapes
-  const hill = (seed, extra) => ({ step: 8, amp: 3, wavelength: 130, seed, ...extra })
-  const band = (d, seed) => sketchBand(d, 140, hill(seed)).fill
-  const marks = (list, seed, size) =>
-    list.flatMap((d, i) => [
-      brush(d, hill(seed + i, { step: 6, amp: 2, wavelength: 50, width: size })),
-      brush(d, hill(seed + i + 50, { step: 6, amp: 2, wavelength: 50, width: size * 0.7, from: 0.2, to: 0.75, offset: size * 1.8 })),
-    ])
-  shapes = {
-    // 從上往下看的樹冠，半徑 50，擺放時再縮放
-    trees: [0, 1, 2, 3].map((k) => sakuraCanopy(700 + k * 41)),
-    // 首屏接草地的兩層山丘（座標寬 2400、高 140，跟首屏一樣以裁切方式鋪滿）
-    hills: {
-      back: band('M-60 64C200 34 400 32 600 56S1000 86 1200 54S1600 24 1800 50S2200 82 2460 52', 1),
-      backMarks: marks(['M150 54C250 46 350 45 450 52', 'M1400 50C1500 42 1600 40 1700 48', 'M900 82C980 84 1060 80 1140 72'], 20, 4),
-      front: band('M-60 92C250 68 500 66 750 86S1250 106 1500 84S2000 64 2460 88', 2),
-      frontMarks: marks(['M300 90C400 82 500 81 600 86', 'M1100 112C1200 114 1300 110 1400 102', 'M1800 86C1900 80 2000 80 2100 86'], 30, 4),
-    },
-    // 卡通雲：幾個圓疊成底部也圓滾滾的一朵（座標 200×100）
-    cloud: [
-      [52, 58, 26],
-      [92, 44, 34],
-      [136, 52, 28],
-      [166, 64, 18],
-      [80, 70, 20],
-      [120, 72, 20],
-      [150, 72, 14],
-    ]
-      .map(([cx, cy, r], i) => sketch(circle(cx, cy, r), { step: 4, amp: 1.2, wavelength: 40, seed: 200 + i }))
-      .join(''),
-  }
-  return shapes
+/* ---------- 版面：量出各區塊與內容的位置 ---------- */
+/*
+ * 常見問題現在展開撐開的高度。常見問題整欄標了 data-stretch-column：
+ * 一欄排的時候展開多高就撐開多高；跟地圖左右並排時（上緣對齊的那一欄），要先長得比地圖那欄高才會把版面撐開
+ */
+const heightOf = (el) => el.getBoundingClientRect().height
+function stretchOf(main) {
+  return [...main.querySelectorAll('[data-stretch-column]')].reduce((sum, column) => {
+    const own = column.getBoundingClientRect()
+    const open = [...column.querySelectorAll('[data-stretch]')].reduce((s, el) => s + heightOf(el), 0)
+    const beside = [...column.parentElement.children]
+      .filter((el) => el !== column)
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => Math.abs(r.top - own.top) < 1)
+      .map((r) => r.bottom)
+    return sum + Math.max(0, own.bottom - Math.max(own.bottom - open, ...beside))
+  }, 0)
 }
 
-/* ---------- 版面：量出各區塊與內容的位置 ---------- */
 function measure() {
   const main = root.value.parentElement
   const box = main.getBoundingClientRect()
-  const rel = (r) => ({
+  // 常見問題在最後一區（交通），那一區的底部和 <main> 的底部扣掉撐開的高度，量出收合時的版面；先扣再四捨五入，展開前後才會量出一樣的數字
+  const stretch = stretchOf(main)
+  const rel = (r, less = 0) => ({
     left: Math.round(r.left - box.left),
     right: Math.round(r.right - box.left),
     top: Math.round(r.top - box.top),
-    bottom: Math.round(r.bottom - box.top),
+    bottom: Math.round(r.bottom - box.top - less),
   })
-  const zones = [...main.querySelectorAll(':scope > .scenic')].map((section) => {
-    const own = rel(section.getBoundingClientRect())
+  const sections = [...main.querySelectorAll(':scope > .scenic')]
+  const zones = sections.map((section, i) => {
+    const less = i === sections.length - 1 ? stretch : 0
+    const own = rel(section.getBoundingClientRect(), less)
     const kids = [...section.querySelector('.scenic__inner').children]
-      .map((el) => rel(el.getBoundingClientRect()))
-      .filter((r) => r.bottom > r.top)
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => r.height > 0)
     const content = kids.length
-      ? {
-          left: Math.min(...kids.map((r) => r.left)),
-          right: Math.max(...kids.map((r) => r.right)),
-          top: Math.min(...kids.map((r) => r.top)),
-          bottom: Math.max(...kids.map((r) => r.bottom)),
-        }
+      ? rel(
+          {
+            left: Math.min(...kids.map((r) => r.left)),
+            right: Math.max(...kids.map((r) => r.right)),
+            top: Math.min(...kids.map((r) => r.top)),
+            bottom: Math.max(...kids.map((r) => r.bottom)),
+          },
+          less,
+        )
       : own
     return { ...own, content }
   })
-  return { W: Math.round(box.width), H: Math.round(box.height), zones }
+  return { W: Math.round(box.width), H: Math.round(box.height - stretch), zones, stretch }
 }
 
-// 岸邊、海、岸上分開快取：表單送出只改變回覆以下的部分，上面的岸邊不用重算
+// 婚紗的紙、海、岸上分開快取：表單送出只改變回覆以下的部分，上面的紙不用重算
 const cache = {}
 function cached(slot, input, fn) {
   const key = JSON.stringify(input)
@@ -96,200 +92,337 @@ function cached(slot, input, fn) {
 }
 
 function draw({ W, H, zones }) {
-  // 依序是岸邊（婚紗）、海（資訊）、海上的小島（回覆）、岸上的櫻花林（交通）
+  // 依序是紙（婚紗）、海（資訊）、海（回覆）、岸上的櫻花林（交通）
   const blocks = zones.map((z) => z.content)
   // 各區內容之間的空白：第 0 段在第一區內容上方，第 k 段在第 k 區內容下方
   const gaps = blocks.map((b, k) => {
     const top = k ? blocks[k - 1].bottom : 0
     return { top, bottom: b.top, h: b.top - top }
   })
-  const shore = cached('shore', { W, gap: gaps[0] }, drawShore)
+  const frame = cached('frame', { W, horizon: zones[0].bottom, below: gaps[1].bottom }, drawFrame)
   const grove = cached('grove', { W, H, gap: gaps[3], block: blocks[3] }, drawGrove)
-  const sea = cached('sea', { W, blocks: blocks.slice(0, 3), gaps: gaps.slice(1), shoreGull: shore.gull, bottom: grove.top }, drawSea)
-  const { hillH } = shore
+  const sea = cached('sea', { W, rsvp: blocks[2], gaps: gaps.slice(2, 4) }, drawSea)
+  const { seaTop } = frame
+  const { landTop } = grove
+  const tile = (GRAIN_SIZE * grainDot()).toFixed(2)
+  const water = seaGradient({ seaTop, horizon: zones[0].bottom, card: blocks[1], next: blocks[2].top, landTop })
+  const seaBack = `${grainUrl}, linear-gradient(var(--scene-paper) ${seaTop}px, ${water.stops}, var(--scene-grass-deep) ${landTop}px)`
   return {
     W,
-    shapes: getShapes(),
-    // 地面和樹分成兩張 svg、中間夾著會動的小草，兩張的位置與座標一樣：最上面超出 <main> 頂端（山丘疊在首屏底部），下面到 <main> 底部
+    // 地面和樹的幾張 svg 位置與座標都一樣，從 <main> 頂端畫到底部
     canvas: {
-      style: { top: `${-hillH}px`, height: `${H + hillH}px` },
-      viewBox: `0 ${-hillH} ${W} ${H + hillH}`,
+      style: { top: '0px', height: `${H}px` },
+      viewBox: `0 0 ${W} ${H}`,
     },
-    shore,
+    frame,
     sea,
     grove,
-    // 海紋鋪滿兩道海岸之間，上下會被兩邊的草地蓋住
-    waves: { top: `${shore.seaTop}px`, height: `${grove.landTop - shore.seaTop}px` },
-    petals: [...shore.petals, ...sea.island.petals, ...grove.petals],
-    trees: [...shore.trees, ...sea.island.trees, ...grove.trees],
-    tufts: [...shore.tufts, ...grove.tufts],
+    // 海紋鋪滿紙的底與上岸的海岸之間，上下會被紙和草地蓋住；上面淺色那段不畫，海變藍才慢慢出現
+    waves: { top: `${seaTop}px`, height: `${landTop - seaTop}px`, maskImage: water.mask },
+    petals: grove.petals,
+    // 交通內容下方的樹和落花另外放一張畫布，常見問題展開時整張往下移
+    trees: [
+      { key: 'above', trees: grove.trees },
+      { key: 'below', trees: grove.below.trees, below: true },
+    ],
+    belowPetals: grove.below.petals,
     fallers: cached('fallers', { W, zone: grove.sakura, count: W >= 768 ? 40 : 22 }, drawFallers),
+    /*
+     * 海是 <main> 的背景：由上往下從淡黃變成藍，一路變到上岸的地方（seaGradient）。
+     * 婚紗的紙和上岸後的草地是 svg 畫的，草地只畫到收合時的 <main> 底部；常見問題展開多出來的那段露出背景，接著草地最下面的顏色。
+     * 顆粒疊在最上層；svg 的色塊不透明，蓋在上面的地方不會疊兩層顆粒（紙、草地自己鋪）。
+     * 最上面撕紙邊那一段（tear）背景不畫，撕進去的缺口才露得出後面的首屏。
+     * 不支援 color-mix 的舊瀏覽器整條 background-image 會失效、連海都不見：先給一個沒有 veil 的（none 佔住那一層），Vue 會留最後一個有效的
+     */
     style: {
-      background: `linear-gradient(var(--scene-grass) ${shore.seaTop}px, var(--scene-sea) ${shore.seaTop}px ${grove.landTop}px, var(--scene-grass) ${grove.landTop}px)`,
+      backgroundImage: [`none, ${seaBack}`, `${water.veil}, ${seaBack}`],
+      backgroundSize: `auto, ${tile}px ${tile}px, auto`,
+      paddingTop: `${frame.tear}px`,
+      backgroundClip: 'content-box',
     },
   }
 }
 
 /*
- * 草地與海的交界：一道橫跨畫面的大弧線，中間往上拱、兩側往下（y 是弧線的平均高度），
- * 只靠手繪的小抖動帶出筆觸，再描一道深色的線
+ * 海由上往下從淡黃變成藍，漸層拉滿整片海：從紙的下緣（horizon）到上岸（landTop，差不多就是回覆那一區的最後）。
+ * 紙的下緣是淡黃，到桌曆（card）上緣變成偏白的淡米色，桌曆後面慢慢變成淡藍，
+ * 到回覆（next 是回覆內容的上緣）是原本的亮藍，回覆那一段再慢慢變成海的藍，一直到岸邊。
+ * 每個畫面只看得到其中一小段在變，不要擠在一小段（試過，分成好幾條色帶，太突兀）。
+ * 桌曆的黃框壓在黃上會不見，桌曆上緣已經是淡米色。藍直接接黃會混成灰綠，中間墊淡米色。
+ * 之前試過：金黃到藍（擠在紙和桌曆之間）、粉紅到藍、藍黃粉、藍到淺紫（再到粉紅）、藍到淡黃，換成淡黃到藍
  */
-const arcRise = (W) => Math.min(130, Math.max(36, W * 0.1))
+function seaGradient({ seaTop, horizon, card, next, landTop }) {
+  // 淺色的那幾段：[顏色, 位置]；紙的下緣往下捲時會落後（hem-lag），從紙的底（seaTop）就開始是淡黃
+  const glow = [
+    ['yellow', seaTop],
+    ['yellow', horizon],
+    ['cream', card.top],
+    ['pale', card.bottom],
+  ]
+  // 顆粒是整片海共用的一層背景，沒辦法只在一段調淡：淺色那段上面再蓋一層同色、55% 不透明的漸層，顆粒只透出 45%
+  const veil = (name) => `color-mix(in srgb, var(--scene-sea-${name}) 55%, transparent)`
+  return {
+    veil: `linear-gradient(transparent ${seaTop}px, ${glow.map(([c, y]) => `${veil(c)} ${y}px`).join(', ')}, transparent ${next}px)`,
+    stops: [
+      ...glow.map(([c, y]) => `var(--scene-sea-${c}) ${y}px`),
+      `var(--scene-sea-light) ${next}px`,
+      `var(--scene-sea) ${landTop}px`,
+    ].join(', '),
+    // 海紋（座標從 seaTop 起算）在淺色那段不畫，桌曆上緣到回覆上緣慢慢出現；深藍的短線畫在淺色上像刮痕
+    mask: `linear-gradient(transparent ${card.top - seaTop}px, #000 ${next - seaTop}px)`,
+  }
+}
+
+/*
+ * 海與草地的交界（上岸的海岸）：一道橫跨畫面、接近水平的平緩弧線，中間微微往上拱、兩側往下（y 是弧線的平均高度），
+ * 跟首屏的海和草地一樣是比較水平的分界（原本拱得很高，像一座圓圓的山丘，已經壓平）；
+ * 邊緣只帶一點手繪的小抖動，像撕開的紙邊，不描邊，靠兩邊的顏色分出交界
+ */
+const arcRise = (W) => Math.min(40, Math.max(14, W * 0.026))
 function arcAt(W, y) {
   const rise = arcRise(W)
   return (x) => y + rise * (0.5 - Math.sin((Math.PI * x) / W))
 }
+// 回覆與交通之間上岸：海在上、草地在下；海岸排在中間偏上，草地只留一條空的草地和一點空白
+const coastLine = (W, gap) => arcAt(W, gap.top + gap.h * 0.45)
 // 左右各多畫 40，手繪抖動時畫面邊緣才不會露出缺口
 const edgeXs = (W) => Array.from({ length: Math.ceil((W + 80) / 16) + 1 }, (_, i) => -40 + i * 16)
 const polyline = (xs, fn) => `M${xs.map((x) => `${x} ${fn(x).toFixed(1)}`).join('L')}`
 
-/* ---------- 草地上共用的東西：櫻花樹、落花、小草 ---------- */
-// 一棵櫻花樹（從上往下看的樹冠），樹冠中心在 (x, y)、半徑 r：樹冠上緣約 1.15r、影子下緣約 1.4r
-const TONES = ['', 'tone-pale', 'tone-rose']
-function tree(id, x, y, r) {
-  const { trees } = getShapes()
-  return {
-    id,
-    x,
-    y,
-    r,
-    shapes: trees[Math.floor(noise(id, 6) * trees.length)],
-    tone: TONES[Math.floor(noise(id, 5) * TONES.length)],
-    transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) scale(${(r / 50).toFixed(3)})`,
-  }
+/* ---------- 草地上共用的東西：樹叢、落花 ---------- */
+/*
+ * 一叢樹（跟首屏右下角的樹叢同一種畫法，見 puffyTree.js）：樹冠疊得很緊、後高前低堆成一座小丘，
+ * 只有前排的樹幹從樹冠底下露出一小截，後排的樹幹整根藏在後面就不畫。
+ * 每個樹冠是 [水平位置, 樹冠中心離地的高度, 橫半徑, 縱半徑, 顏色]，以 r 為單位；顏色是三種顏色裡的第幾種，
+ * 相鄰（疊在一起）的樹冠一定換一種，才分得出一棵棵。mark 是點墨色短弧的樹冠（一叢只點一兩筆），leaf 是長一小撮花瓣的樹冠
+ */
+const CLUMPS = {
+  // 小叢：後面一棵、前面兩棵；上緣約在 2.5r 高、左右各約 1.4r（half、height 是連同波浪邊算的寬度的一半與高度）
+  small: {
+    half: 1.4,
+    height: 2.6,
+    crowns: [
+      [0, 1.72, 0.86, 0.76, 0],
+      [-0.62, 1, 0.7, 0.62, 1],
+      [0.62, 0.94, 0.72, 0.64, 2],
+    ],
+    back: 1,
+    mark: [0],
+    leaf: 1,
+  },
+  // 大叢：中間最後面一棵最高、兩側各一棵、最前面兩棵最低，堆成一座小丘；上緣約在 2.85r 高、左右各約 1.7r。
+  // 只有最後面那棵的樹幹整根藏住，兩側的樹幹從前面兩棵的外側露出一小截
+  big: {
+    half: 1.7,
+    height: 2.95,
+    crowns: [
+      [0.1, 2.05, 0.9, 0.8, 0],
+      [-0.85, 1.35, 0.72, 0.64, 1],
+      [0.95, 1.45, 0.7, 0.62, 2],
+      [-0.45, 0.85, 0.7, 0.62, 2],
+      [0.5, 0.9, 0.66, 0.58, 1],
+    ],
+    back: 1,
+    mark: [0, 4],
+    leaf: 3,
+  },
 }
+// 大多是三種粉紅的櫻花叢，偶爾一叢首屏那種薄荷綠、綠、深綠的樹
+const SAKURA = ['sakura', 'sakura-pale', 'sakura-rose']
+const GREENS = ['mint', 'green', 'deep']
+
+/*
+ * 樹叢的樹幹底部在 (x, y)、大小 r；左右隨機翻面。
+ * 每個樹冠照實際大小畫，不用 transform 縮放：顆粒圖樣跟著座標走，縮放的話顆粒會跟著變大變小
+ */
+function clump(id, x, y, r, kind) {
+  const { half, crowns, back, mark, leaf } = CLUMPS[kind]
+  const palette = noise(id, 5) < 0.85 ? SAKURA : GREENS
+  const shift = Math.floor(noise(id, 6) * 3)
+  const flip = noise(id, 8) > 0.5 ? 1 : -1
+  const trees = crowns.map(([dx, h, sx, sy, c], k) => {
+    const tone = palette[(shift + c) % 3]
+    const rx = r * sx
+    // 墨色短弧、花瓣長在樹冠朝外的那一側（puffyTree 把它們放在樹枝的另一側），才不會被旁邊的樹冠蓋住
+    const branch = dx * flip > 0 ? -1 : 1
+    const { layers, mark: markPath } = puffyTree({
+      x: x + dx * flip * r,
+      y,
+      rx,
+      ry: r * sy,
+      height: r * h,
+      branch,
+      // 櫻花樹長一小撮白色的花瓣、薄荷綠的樹長黃綠色的葉子，綠色、深綠的樹不長
+      leaves: k === leaf && tone !== 'green' && tone !== 'deep' ? 3 + Math.floor(noise(id, 10 + k) * 3) : 0,
+      bumps: 10 + Math.floor(noise(id, 20 + k) * 4),
+      mark: mark.includes(k),
+      seed: id * 61 + k * 7,
+    })
+    return {
+      id: `${id}-${k}`,
+      tone,
+      // 後排的樹幹整根藏在前排的樹冠後面，不畫
+      layers: k < back ? layers.filter((l) => l.part !== 'trunk') : layers,
+      mark: markPath,
+      // 墨色短弧的線寬跟著樹冠的大小（首屏的樹約是樹冠寬的 4.5%）
+      markWidth: Math.max(1.4, rx * 0.045).toFixed(1),
+    }
+  })
+  return { id, x, y, r, half: half * r, trees }
+}
+
+/*
+ * 上岸的地方兩側的樹：照首屏的樹（OpeningScene.vue 的 trees）的位置、大小與畫法，左邊三棵、右邊一小叢和靠右緣的一大叢，
+ * 框住中間空著的草地，像首屏的兩組樹框住新人。顏色換成櫻花：首屏的薄荷綠、綠、深綠依序換成淡粉紅、粉紅、玫瑰粉紅，
+ * 相鄰的樹冠一樣是不同的顏色。座標、seed 都跟首屏一樣（首屏的畫布座標，2079 寬），畫出來的形狀才一模一樣
+ */
+const OPENING_W = 2079
+/*
+ * 樹幹底部在首屏畫布座標裡的高度。首屏的樹幹底藏在紙底下（TREE_GROUND 是 2560，紙的上緣在 2530），這裡樹幹底露出來踩在草地上，
+ * 照首屏那樣整根露出來的話樹幹太長、樹冠又被上方的空間限制住，看起來像棒棒糖，所以樹幹短一點
+ */
+const COAST_GROUND = 2500
+const COAST_GROUPS = [
+  {
+    // 左邊三棵，由後往前：中間的、右邊小一點的、最左邊大棵的
+    side: 'left',
+    trees: [
+      { tone: 'sakura-pale', x: 330, cy: 2345, rx: 105, ry: 92, over: true, branch: -1, leaves: 4, seed: 310 },
+      { tone: 'sakura', x: 505, cy: 2400, rx: 70, ry: 62, seed: 300 },
+      { tone: 'sakura-rose', x: 135, cy: 2355, rx: 130, ry: 110, over: true, leaves: 5, bumps: 13, seed: 320 },
+    ],
+  },
+  {
+    // 右邊往左一點的一小叢，站得比較遠所以小一號
+    side: 'right',
+    trees: [
+      { tone: 'sakura', x: 1550, cy: 2370, rx: 72, ry: 64, seed: 330 },
+      { tone: 'sakura-pale', x: 1485, cy: 2425, rx: 56, ry: 50, mark: false, seed: 331 },
+      { tone: 'sakura-rose', x: 1610, cy: 2440, rx: 58, ry: 52, mark: false, seed: 332 },
+    ],
+  },
+  {
+    // 靠右緣的一大叢，超出畫面一點，像還有樹長到畫面外
+    side: 'right',
+    trees: [
+      { tone: 'sakura-rose', x: 1990, cy: 2255, rx: 120, ry: 108, bumps: 13, mark: false, seed: 340 },
+      { tone: 'sakura', x: 2110, cy: 2290, rx: 110, ry: 100, mark: false, seed: 341 },
+      { tone: 'sakura-pale', x: 1870, cy: 2340, rx: 92, ry: 82, seed: 342 },
+      { tone: 'sakura-rose', x: 1790, cy: 2405, rx: 62, ry: 55, mark: false, seed: 343 },
+      { tone: 'sakura', x: 1960, cy: 2385, rx: 88, ry: 78, mark: false, seed: 344 },
+      { tone: 'sakura-pale', x: 2070, cy: 2410, rx: 85, ry: 76, seed: 345 },
+    ],
+  },
+]
+// 樹冠最高的地方（連同波浪邊往外鼓的部分）
+const COAST_TOP = Math.min(...COAST_GROUPS.flatMap((g) => g.trees.map((t) => t.cy - t.ry * 1.15)))
 
 // 地上的一片落花
 const petal = (x, y, i, wide) => ({
+  y,
   cls: `petal-${i % 3}`,
   transform: `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${Math.round(noise(i, 74) * 360)}) scale(${((wide ? 0.6 : 0.45) * (0.7 + noise(i, 75) * 0.5)).toFixed(2)})`,
 })
 
-// 每棵樹底下再落一圈，多半落在樹冠邊緣外、偏右下（下風處）；ok(x, y) 決定那裡落不落得下
-function petalsUnder(trees, ok, wide) {
+// 每叢樹底下再落一圈，散在樹幹周圍的草地上、偏右（下風處），大叢落得多、散得開；ok(x, y) 決定那裡落不落得下
+function petalsUnder(clumps, ok, wide) {
   const list = []
-  for (const { id, x, y, r } of trees) {
-    for (let j = 0; j < 6; j++) {
-      const i = id * 7 + j
+  for (const { id, x, y, r, half } of clumps) {
+    for (let j = 0; j < Math.round((half / r) * 5); j++) {
+      const i = id * 11 + j
       const a = noise(i, 76) * Math.PI * 2
-      const d = r * (1.05 + noise(i, 77) * 0.5)
-      const px = x + Math.cos(a) * d + r * 0.15
-      const py = y + Math.sin(a) * d * 0.9 + r * 0.15
+      const d = 0.5 + noise(i, 77) * 0.8
+      const px = x + Math.cos(a) * d * half * 0.9 + r * 0.2
+      const py = y + Math.sin(a) * d * r * 0.3 + r * 0.05
       if (ok(px, py)) list.push(petal(px, py, i, wide))
     }
   }
   return list
 }
 
+/* ---------- 婚紗：一張滿版的紙、蓋在海上的紙的下緣 ---------- */
 /*
- * 小草：一排一排細長的橫條（圖樣寬 760，見樣式），每排各自以底部為軸左右擺，一排接一排錯開，像風吹過草地。
- * 只鋪在 from 到 to 之間整片都是草地的地方，不會長到海裡
+ * 婚紗那一區整塊是一張奶油白的紙（--scene-paper），照片直接排在紙上，不加外框（之前的粉紅外框和框裡的圓角紙已經拿掉）。
+ * 紙剛好就是婚紗那一區，一個畫面高（見 ScenicSection 的 scenic--sky）：
+ * 上緣是 <main> 的頂端，跟首屏之間不做過渡，往下捲時直接蓋上來；捲到婚紗、紙佔滿畫面時，上下剛好貼齊畫面。
+ * 上緣是一道撕開的紙邊（tornEdge），只往下撕進去 tear，缺口露出後面的首屏（首屏落後捲動，會墊在紙的上緣後面）；
+ * 不往上凸，一開始首屏佔滿畫面時才看不到紙。
+ * 紙的下緣（hem，原位就是婚紗那一區的底）像一張紙的下襬蓋在海上：下緣是一道手繪的弧線，兩個角是方的，
+ * 兩側貼著婚紗那一區的底、中間往下垂 sag（跟上岸的海岸中間往上拱一上一下呼應）；
+ * 弧線上再疊一道波紋，紙和海的交界像海面的浪。波紋只往下起伏、波長剛好整除畫面寬，兩端貼在波峰上，
+ * 才不會在畫面的兩個下角往上縮、露出海。
+ * 佔滿畫面時連畫面的兩個下角都蓋住，不會露出後面的海；垂下去的那段落在畫面外，捲下去才看得到弧度。
+ * 下緣比婚紗那一區的底再往下多畫 HEM_OVER，手繪的小抖動才不會在畫面下緣露出一條海。
+ * 紙佔滿畫面之後再往下捲，下緣這張比頁面慢一點，捲到畫面頂端時比原位低 down，
+ * 照片、海、資訊照正常速度捲上來，海像是從紙底下滑進去。
+ * down 照紙下面那段海面算，往下錯得少一點，不會碰到資訊。
+ * 上半截只畫到 sheetBottom，一直被下緣這張蓋著；
+ * 下緣這張往上多畫 down，往下錯開的時候跟上半截中間才不會露出海。
+ * 兩側直的那段畫在畫面外 3px，手繪的小抖動才不會在畫面邊緣露出一條海
  */
-function tuftRows(from, to, gap, seed) {
-  return Array.from({ length: Math.max(0, Math.floor((to - from) / gap)) }, (_, i) => ({
-    top: `${Math.round(from + i * gap + (noise(i + seed, 111) - 0.5) * 16)}px`,
-    backgroundPositionX: `${Math.round(noise(i + seed, 112) * 760)}px`,
-    '--delay': `${(-i * 0.4).toFixed(1)}s`,
-  }))
-}
-
-/* ---------- 岸邊：山丘、小貓散步的草地、海岸 ---------- */
-function drawShore({ W, gap }) {
+const HEM_OVER = 6
+// 波紋：寬螢幕大約 130px 一個浪；手機的浪短一點、起伏小一點，一個畫面才不會只有三個浪
+const hemWave = (W) => {
   const wide = W >= 768
-  const { hills } = getShapes()
-  const hillH = wide ? 96 : 72
-  const xs = edgeXs(W)
-
-  /*
-   * 散步的小貓：首屏的草地往下一點，從左走到右、轉身再走回來（畫布 120×84，腳踩在 y=78）。
-   * 來回一趟的秒數照路程算，手機和桌機走得一樣慢；delay 讓牠一開始就走在路中間
-   */
-  const catW = wide ? 116 : 80
-  const catH = (catW * 84) / 120
-  const feet = (wide ? 18 : 10) + catH
-  const catSide = wide ? W * 0.06 : 8
-  const catRun = W - catSide * 2 - catW
-  const catLane = { top: feet - catH - 6, bottom: feet + 10 }
-  const catTrip = (2 * catRun) / (wide ? 40 : 28)
-  const cat = {
-    left: `${Math.round(catSide)}px`,
-    top: `${Math.round(feet - (catH * 78) / 84)}px`,
-    width: `${catW}px`,
-    '--run': `${Math.round(catRun)}px`,
-    '--duration': `${Math.round(catTrip)}s`,
-    '--delay': `${-Math.round(catTrip * 0.2)}s`,
-  }
-
-  // 海岸：小貓腳下再往下一段草地就是海，海岸最靠上的地方（畫面中間）也跟小貓隔著一段距離
-  const coastAt = arcAt(W, feet + 56 + arcRise(W) / 2)
-  const seaTop = Math.floor(Math.min(...xs.map(coastAt)))
-  // 草地往上填到 <main> 頂端（-2 跟山丘重疊一點，接縫才不會露出細線）
-  const coast = sketchBand(polyline(xs, coastAt), -2, stroke(6))
-
-  /*
-   * 櫻花樹：岸邊只在左右兩端（海岸比較低、草地比較寬的地方）、小貓散步的路下方各長一棵，被畫面邊緣切掉一點；
-   * 樹的大小照那裡草地的寬窄調整，太窄就不長
-   */
-  const base = wide ? 56 : 32
-  const trees = [
-    [701, 1, (r) => W - r * 0.4],
-    [702, 0.8, (r) => r * 0.5],
-  ].flatMap(([id, k, xOf]) => {
-    const room = (x) => [catLane.bottom + 4, coastAt(x) - 6]
-    const [top, bottom] = room(xOf(base * k))
-    const r = Math.min(base * k, (bottom - top) / 2.55)
-    if (r < base * 0.5) return []
-    const x = xOf(r)
-    const [t, b] = room(x)
-    return [tree(id, x, (t + b) / 2 - r * 0.125, r)]
-  })
-
-  // 地上的落花：岸邊的草地上零零落落，樹底下再多一圈
-  const onGrass = (x, y) => y > 4 && y < coastAt(x) - 4
-  const petals = []
-  const tries = Math.round((W * seaTop) / (wide ? 7000 : 3500))
-  for (let i = 0; i < tries; i++) {
-    const x = noise(i, 71) * W
-    const y = noise(i, 72) * (seaTop + arcRise(W))
-    if (noise(i, 73) > 0.55 || !onGrass(x, y)) continue
-    petals.push(petal(x, y, i, wide))
-  }
-  petals.push(...petalsUnder(trees, onGrass, wide))
-
-  // 岸邊下方那隻海鷗：飛在海岸往下一段的海面上，不會碰到婚紗的標題
-  const xGull = W * (wide ? 0.4 : 0.3) + (wide ? 276 : 146)
-  const yFrom = coastAt(W * (wide ? 0.4 : 0.3)) - (wide ? 14 : 9)
-  const drop = Math.min(wide ? 170 : 118, gap.bottom - (wide ? 48 : 32) - yFrom)
-
+  return { len: W / Math.max(3, Math.round(W / (wide ? 130 : 100))), amp: wide ? 10 : 7 }
+}
+// 紙的下緣（原位）在 x 這裡的高度
+const hemAt = (W, horizon, sag) => {
+  const { len, amp } = hemWave(W)
+  return (x) =>
+    horizon + HEM_OVER + sag * Math.max(0, Math.sin((Math.PI * x) / W)) + (amp * (1 - Math.cos((2 * Math.PI * x) / len))) / 2
+}
+function drawFrame({ W, horizon, below }) {
+  // below 是資訊內容的頂端，紙和資訊中間是一段海面
+  const gap = below - horizon
+  // 垂多深照畫面寬算，也不超過那段海面的四分之一；垂下去的部分扣掉再算錯開多少，往下錯開時才碰不到資訊
+  const sag = Math.min(gap * 0.25, Math.min(64, Math.max(20, W * 0.045)))
+  const down = Math.round((gap - sag) * 0.25)
+  const sheetBottom = horizon - 40
+  const hemTop = sheetBottom - down - 4
+  const edgeAt = hemAt(W, horizon, sag)
+  // 取點要比波紋密，浪才是圓的
+  const n = Math.ceil((W + 6) / 6)
+  const xs = Array.from({ length: n + 1 }, (_, i) => -3 + ((W + 6) * i) / n)
+  const hem = sketchBand(`M-3 ${hemTop}${polyline(xs, edgeAt).replace('M', 'L')}L${W + 3} ${hemTop}`, hemTop, stroke(6))
+  const hemHeight = horizon + HEM_OVER + sag + hemWave(W).amp + 4 - hemTop
+  // 撕紙邊只撕進去一點點，手機再淺一點
+  const tear = W >= 768 ? 7 : 5
   return {
-    hillH,
-    hills: { ...hills, transform: hillTransform(W, hillH) },
-    seaTop,
-    grass: coast.fill,
-    coast: coast.line,
-    cat,
-    trees: trees.sort((a, b) => a.y - b.y),
-    petals,
-    tufts: tuftRows(10, seaTop - 24, wide ? 58 : 46, 0),
-    gull: { x: xGull, y: yFrom + drop * 0.8 },
+    // 海從紙上半截的底開始，上面那段一直被下緣這張蓋著
+    seaTop: sheetBottom,
+    horizon,
+    tear,
+    fill: `${tornEdge(-40, W + 40, { depth: tear, seed: 8 })}L${W + 40} ${sheetBottom}H-40Z`,
+    /*
+     * 外層（box）停在下緣原本的高度、只有 1px 高，當捲動時間軸：從畫面下緣進來到從上緣離開；
+     * 紙佔滿畫面時下緣剛好碰到畫面下緣，時間軸從這裡開始；裡面那張（sheet）照時間軸從原位錯到往下 down
+     */
+    hem: {
+      horizon,
+      sag,
+      down,
+      fill: hem.fill,
+      viewBox: `0 ${hemTop} ${W} ${hemHeight}`,
+      box: { top: `${horizon}px`, '--hem-down': `${down}px` },
+      sheet: { top: `${hemTop - horizon}px`, height: `${hemHeight}px` },
+    },
   }
 }
 
-// 山丘畫布（2400×140）鋪滿寬度、下緣對齊 <main> 頂端，跟原本 xMidYMax slice 的效果一樣
-function hillTransform(W, hillH) {
-  const s = Math.max(W / 2400, hillH / 140)
-  return `translate(${((W - 2400 * s) / 2).toFixed(1)} ${(-140 * s).toFixed(1)}) scale(${s.toFixed(4)})`
-}
-
-/* ---------- 海：海鷗、白雲、回覆右側的小島 ---------- */
-function drawSea({ W, blocks: [gallery, info, rsvp], gaps: [gap1, gap2, gap3], shoreGull, bottom }) {
+/* ---------- 海：海鷗 ---------- */
+/*
+ * 海上只放海鷗，不放雲：資訊那一段空著，資訊與回覆之間先飛來一隻海鷗，
+ * 回覆那一段越往下越多（兩側一兩隻，表單下方一小群）
+ */
+function drawSea({ W, rsvp, gaps: [gap2, gap3] }) {
   const wide = W >= 768
-  const island = drawIsland(W, rsvp, gap2)
-
-  // 海鷗與海上的白雲（影子落在海面上）；sprite 以中心點定位
+  // 海鷗以中心點定位
   const at = (x, y, w, extra = {}) => ({ left: `${(x - w / 2).toFixed(0)}px`, top: `${(y - w / 2).toFixed(0)}px`, width: `${w}px`, ...extra })
   const gullSize = wide ? 76 : 52
-  const cloudSize = wide ? 170 : 110
+  // 寬 w 的海鷗連同滑翔，翅膀最高到中心往上 0.45w、身體最低到中心往上 0.15w 再往下 2px
+  const gullUp = (w) => w * 0.45
+  const gullDown = (w) => 2 - w * 0.15
   // 一群海鷗：帶頭的最大，其他的散在旁邊、有大有小；位置以海鷗的大小為單位，(x, y) 大約是整群的中心，k 是整群的縮放
   const flock = (x, y, n, k = 1) =>
     [
@@ -301,160 +434,112 @@ function drawSea({ W, blocks: [gallery, info, rsvp], gaps: [gap1, gap2, gap3], s
     ]
       .slice(0, n)
       .map(([u, v, s]) => [x + u * gullSize * k, y + v * gullSize * k, s * k])
-  // 回覆下方、上岸之前的那一段海
-  const last = { top: gap3.top, h: bottom - gap3.top }
-  const gulls = [
-    ...flock(shoreGull.x, shoreGull.y, 3),
-    [W * 0.8, gap1.top + gap1.h * 0.3, 0.9],
-    // 資訊與回覆之間：小島在右邊，海鷗飛在左邊
-    [W * 0.16, gap2.top + gap2.h * 0.4, 1],
-    [W * 0.14, last.top + last.h * 0.5, 0.9],
-  ]
-  const clouds = [
-    [W * (wide ? 0.2 : 0.26), gap1.top + gap1.h * 0.62, cloudSize],
-    [W * (wide ? 0.82 : 0.76), last.top + last.h * 0.45, cloudSize * 0.9],
-  ]
-  // 寬螢幕：內容兩側露出一大片海，沿著三區的內容再放幾隻海鷗和幾朵雲，左右錯開，也避開小島；
-  // 婚紗旁邊不放雲，改成標題左邊一群海鷗，兩側的海比較窄時整群縮小，才不會飛進照片裡
-  const side = rsvp.left
-  if (side > 150) {
-    const along = (b, t) => b.top + (b.bottom - b.top) * t
-    const L = (u) => side * u
-    const R = (u) => W - side * u
-    gulls.push(
-      ...flock(L(0.45), along(gallery, 0.05), 5, Math.min(1, side / 300)),
-      [R(0.45), along(info, 0.25), 1.1],
-      [L(0.6), along(info, 0.7), 0.85],
-      [L(0.45), along(rsvp, 0.55), 1],
-      [R(0.5), along(rsvp, 0.62), 0.8],
-    )
-    clouds.push([L(0.5), along(rsvp, 0.22), 160], [R(0.5), along(rsvp, 0.85), 170])
-    // 小島擺到表單右邊時，資訊與回覆之間的右側空出來，補一朵雲
-    if (island.beside) clouds.push([W * 0.8, gap2.top + gap2.h * 0.35, 150])
+  const along = (b, t) => b.top + (b.bottom - b.top) * t
+
+  // 資訊與回覆之間：先飛來一隻海鷗，排在右邊
+  const gulls = [[W * 0.8, gap2.top + gap2.h * 0.5, 0.9]]
+
+  /*
+   * 回覆那一區：表單兩側夠寬時，左上一隻海鷗、右下兩隻，跟資訊與回覆之間那隻左右錯開。
+   * 表單下方到上岸前那段海面，夾在上岸的地方兩側的櫻花樹中間（見 COAST_GROUPS）再放一小群，
+   * 排在表單和海岸正中間；兩側有海鷗的話下方空著（原本放一隻海鷗，已經拿掉）
+   */
+  const roomy = rsvp.left > 200
+  if (roomy) {
+    gulls.push([rsvp.left * 0.5, along(rsvp, 0.3), 0.9], ...flock(W - rsvp.left * 0.5, along(rsvp, 0.7), 2, 0.8))
+  } else {
+    // 整群都要排在表單下方、海岸上方；放不下就不放
+    const coastAt = coastLine(W, gap3)
+    const k = wide ? 0.85 : 0.8
+    const birds = flock(W * 0.5, 0, 3, k)
+    const top = Math.max(...birds.map(([, dy, s]) => gap3.top + 12 + gullUp(gullSize * s) - dy))
+    const bottom = Math.min(...birds.map(([x, dy, s]) => coastAt(x) - 10 - gullDown(gullSize * s) - dy))
+    if (bottom > top) gulls.push(...flock(W * 0.5, (top + bottom) / 2, 3, k))
   }
 
   return {
-    island,
     gulls: gulls.map(([x, y, k], i) =>
       at(x, y, gullSize * k, { '--delay': `${(-noise(i, 91) * 3).toFixed(1)}s`, '--drift': `${(5 + noise(i, 92) * 3).toFixed(1)}s` }),
     ),
-    clouds: clouds.map(([x, y, w], i) => at(x, y, w, { '--duration': `${5 + (i % 4) * 1.3}s`, '--delay': `${-i * 1.7}s` })),
   }
 }
 
-/*
- * 回覆這一區右側海上的小島：從正上方看是一塊圓胖的草地，外圈一圈沙灘，沙灘外描一道深色的線（跟海岸一樣），
- * 海面上落著島的影子、周圍斷斷續續一圈白色浪花；島上兩棵櫻花樹、幾叢小草和落花。
- * 表單右邊露出的海夠寬（寬螢幕）就擺在表單右邊、靠上的地方，不然擺在資訊與回覆之間的空白
- */
-function drawIsland(W, form, gap) {
-  const wide = W >= 768
-  const w = wide ? 290 : 160
-  const h = w * 0.62
-  const room = W - form.right
-  const beside = room > w + 70
-  const cx = beside ? W - room / 2 : W - w / 2 - (wide ? 40 : 14)
-  const cy = beside ? form.top + h * 0.55 : gap.top + gap.h * 0.52
-  const rx = w / 2
-  const ry = h / 2
-  const sand = wide ? 12 : 8
-
-  // 輪廓：橢圓的半徑隨角度起伏一點，看起來圓胖不規則；取一圈裡 from 到 to 這一段（一整圈是 0 到 1）
-  const ring = (ax, ay, from = 0, to = 1, dx = 0, dy = 0) => {
-    const n = Math.max(2, Math.round(48 * (to - from)))
-    return Array.from({ length: n + 1 }, (_, i) => {
-      const a = (from + ((to - from) * i) / n) * 2 * Math.PI
-      const k = 1 + 0.08 * Math.sin(2 * a + 1.1) + 0.05 * Math.sin(3 * a + 2.3)
-      return `${(cx + dx + Math.cos(a) * ax * k).toFixed(1)} ${(cy + dy + Math.sin(a) * ay * k).toFixed(1)}`
-    })
-  }
-  const loop = (ax, ay, dx, dy, seed) => sketch(`M${ring(ax, ay, 0, 1, dx, dy).slice(1).join('L')}Z`, stroke(seed, { step: 5 }))
-  // 草地比沙灘小一圈、往左上偏一點，右下方的沙灘寬一些
-  const grass = { dx: -sand * 0.3, dy: -sand * 0.4, rx: rx - sand, ry: ry - sand }
-  const onGrass = (x, y) => ((x - cx - grass.dx) / grass.rx) ** 2 + ((y - cy - grass.dy) / grass.ry) ** 2 < 0.8
-
-  const foamGap = wide ? 15 : 10
-  const foam = [
-    [0.02, 0.18],
-    [0.27, 0.43],
-    [0.52, 0.66],
-    [0.76, 0.93],
-  ]
-    .map(([from, to], i) => brush(`M${ring(rx + foamGap, ry + foamGap * 0.85, from, to).join('L')}`, stroke(410 + i, { width: wide ? 3 : 2.4, amp: 1 })))
-    .join('')
-
-  // 草地上兩筆淺色筆觸，和三叢小草（跟會動的那排小草同一種畫法：草根在下、三片草葉）
-  const marks = [
-    [-0.2, 0.2, 0.2],
-    [0.12, -0.22, 0.16],
-  ]
-    .map(([u, v, len], i) => {
-      const x = cx + u * w
-      const y = cy + v * h
-      const half = (len * w) / 2
-      return brush(`M${x - half} ${y}Q${x} ${y - half * 0.25} ${x + half} ${y}`, stroke(420 + i, { width: wide ? 4 : 3, amp: 0.8, wavelength: 40 }))
-    })
-    .join('')
-  const s = wide ? 0.85 : 0.6
-  const tufts = [
-    [0.32, -0.25],
-    [-0.33, 0.18],
-    [0.02, 0.32],
-  ]
-    .map(([u, v]) => {
-      const x = (cx + u * w).toFixed(1)
-      const y = (cy + v * h).toFixed(1)
-      return `M${x} ${y}m${-3 * s} 0q${-s} ${-9 * s} ${-7 * s} ${-15 * s}M${x} ${y}q0 ${-11 * s} ${2 * s} ${-19 * s}M${x} ${y}m${3 * s} 0q${2 * s} ${-8 * s} ${8 * s} ${-12 * s}`
-    })
-    .join('')
-
-  const trees = [tree(801, cx - w * 0.12, cy - h * 0.12, wide ? 46 : 26), tree(802, cx + w * 0.21, cy + h * 0.08, wide ? 30 : 17)]
-
-  return {
-    beside,
-    shadow: loop(rx, ry, wide ? 10 : 6, wide ? 12 : 8, 401),
-    foam,
-    beach: loop(rx, ry, 0, 0, 400),
-    grass: loop(grass.rx, grass.ry, grass.dx, grass.dy, 402),
-    marks,
-    tufts,
-    trees,
-    petals: petalsUnder(trees, onGrass, wide),
-  }
-}
-
-/* ---------- 岸上：海岸、越往下越多的櫻花樹、雲影 ---------- */
+/* ---------- 岸上：海岸、越往下越多的櫻花樹叢 ---------- */
 function drawGrove({ W, H, gap, block }) {
   const wide = W >= 768
   const xs = edgeXs(W)
-  // 回覆與交通之間上岸：跟婚紗那裡的海岸一樣是一道大弧線，這次海在上、草地在下
-  const coastAt = arcAt(W, gap.top + gap.h * 0.4)
+  const coastAt = coastLine(W, gap)
   const top = Math.floor(Math.min(...xs.map(coastAt)))
   const landTop = Math.ceil(Math.max(...xs.map(coastAt)))
-  // 草地補到整片都是草地的地方，再往下由 <main> 的背景接手
-  const coast = sketchBand(polyline(xs, coastAt), landTop + 40, stroke(16))
+  // 草地一路畫到 <main> 底部，整片是同一道漸層（靠海亮、往下深）；常見問題展開多出來的那段由 <main> 的背景接手
+  const coast = sketchBand(polyline(xs, coastAt), H, stroke(16))
 
   /*
-   * 櫻花樹：把岸上的草地切成大格子，每格隨機放一棵，越往下放的機率越高，但整體疏疏落落；
-   * 整棵樹連影子都要在草地上、不超出 <main> 底部（超出會把頁面撐高），樹冠中心也不能躲在內容後面
+   * 上岸後的草地往下一點空出一條橫的草地，其他的樹都避開，兩側那幾叢樹框住中間這塊空地，
+   * 像首屏的兩組樹框住新人（原本是小貓散步的路，小貓拿掉後留白照原本的位置）
    */
-  const cell = wide ? [230, 190] : [130, 120]
-  const trees = []
+  const feet = landTop + (wide ? 40 : 26)
+  const lane = { top: feet - (wide ? 87 : 62), bottom: feet + 10 }
+
+  /*
+   * 上岸的地方兩側的樹（見 COAST_GROUPS）：照首屏的畫布座標縮放 k 倍，左邊那組貼齊畫面左緣、右邊兩叢貼齊右緣；
+   * 手機上放大到比畫面還寬，跟首屏一樣左右平均裁掉一些（shift）。
+   * 樹幹底部踩在海岸線下方一點的草地上，樹冠高過海岸線疊在海面上；
+   * 寬螢幕最大約是首屏的八成五（首屏的樹放在這裡太搶眼），樹冠也不能碰到回覆的內容，放不下就縮小
+   */
+  const ground = landTop + (wide ? 22 : 14)
+  const k = Math.min(Math.max(0.26, Math.min(0.6, (W / OPENING_W) * 0.85)), (ground - gap.top - 12) / (COAST_GROUND - COAST_TOP))
+  const shift = Math.min(0, (W - OPENING_W * k) / 2)
+  const coastGroups = COAST_GROUPS.map(({ side, trees }, g) => {
+    const id = 5000 + g * 11
+    const sx = (x) => (side === 'left' ? shift + x * k : W - shift - (OPENING_W - x) * k)
+    const list = trees.map(({ tone, x, cy, rx, ry, ...rest }, i) => {
+      const { layers, mark } = puffyTree({ ...rest, x: sx(x), y: ground, rx: rx * k, ry: ry * k, height: (COAST_GROUND - cy) * k })
+      return { id: `${id}-${i}`, tone, layers, mark, markWidth: Math.max(1.4, rx * k * 0.045).toFixed(1) }
+    })
+    const left = Math.min(...trees.map((t) => sx(t.x - t.rx)))
+    const right = Math.max(...trees.map((t) => sx(t.x + t.rx)))
+    const height = (COAST_GROUND - Math.min(...trees.map((t) => t.cy - t.ry * 1.15))) * k
+    // 跟其他樹叢一樣記下中心、寬度的一半和 r（高度約 2.6r），落花和其他樹叢照這些避開
+    return { id, x: (left + right) / 2, y: ground, r: height / 2.6, half: (right - left) / 2, trees: list }
+  })
+
+  /*
+   * 其他樹叢：把岸上的草地切成大格子，每格隨機放一叢（格子裡的點是整叢的中間），大叢小叢各半，
+   * 越往下放的機率越高（約兩成到五成半），整體疏疏落落；
+   * 整叢都要在草地上、不超出 <main> 底部（超出會把頁面撐高），樹冠和樹幹底部也不能躲在內容後面，
+   * 也不能跟別叢（包括上岸的地方兩側那幾叢）擠在一起、蓋住中間那條空的草地
+   */
+  // 格子的寬度把畫面平均分成幾欄，兩側的欄才不會只剩半格
+  const cols = Math.max(1, Math.round(W / (wide ? 280 : 150)))
+  const cell = [W / cols, wide ? 210 : 130]
+  const clumps = [...coastGroups]
   for (let row = 0; top + row * cell[1] < H; row++) {
-    for (let col = 0; col * cell[0] < W; col++) {
+    for (let col = 0; col < cols; col++) {
       const id = row * 97 + col * 13 + 7
-      const x = (col + 0.5 + (noise(id, 1) - 0.5) * 0.7) * cell[0]
+      const r = (wide ? 50 : 30) * (0.85 + noise(id, 4) * 0.3)
+      const kind = noise(id, 12) < 0.5 ? 'big' : 'small'
+      const half = CLUMPS[kind].half * r
+      const height = CLUMPS[kind].height * r
+      // 靠畫面兩側的樹叢可以超出畫面一點，像還有樹長到畫面外，但最多切掉兩成，不然只露出一小條看起來像畫錯
+      const x = Math.min(W - half * 0.6, Math.max(half * 0.6, (col + 0.5 + (noise(id, 1) - 0.5) * 0.7) * cell[0]))
       const y = top + (row + 0.5 + (noise(id, 2) - 0.5) * 0.6) * cell[1]
       const depth = Math.min(1, (y - top) / (H - top))
-      if (noise(id, 3) > 0.3 + 0.45 * depth) continue
-      const r = (wide ? 54 : 32) * (0.85 + noise(id, 4) * 0.3)
-      if (y - r * 1.15 < coastAt(x) + 8 || y + r * 1.4 > H - 4) continue
-      if (inside({ left: block.left - r * 0.35, right: block.right + r * 0.35, top: block.top - r * 0.35, bottom: block.bottom + r * 0.35 }, x, y)) continue
-      trees.push(tree(id, x, y, r))
+      if (noise(id, 3) > 0.2 + 0.35 * depth) continue
+      const foot = y + height / 2
+      const crownTop = foot - height
+      if (crownTop < Math.max(coastAt(x - half), coastAt(x), coastAt(x + half)) + 8 || foot + r * 0.2 > H - 4) continue
+      const near = { left: block.left - r * 0.35, right: block.right + r * 0.35, top: block.top - r * 0.35, bottom: block.bottom + r * 0.35 }
+      if ([-0.7, 0, 0.7].some((u) => inside(near, x + u * half, foot) || inside(near, x + u * half, foot - r * 1.4))) continue
+      // 交通內容（地圖、常見問題）的兩側也不種，旁邊保持乾淨，樹只長在內容下方
+      if (crownTop < block.bottom && foot > block.top) continue
+      if (clumps.some((c) => Math.abs(c.x - x) < (c.half + half) * 1.1 && Math.abs(c.y - foot) < (c.r + r) * 1.6)) continue
+      if (foot > lane.top && crownTop < lane.bottom) continue
+      clumps.push(clump(id, x, foot, r, kind))
     }
   }
 
-  // 地上的落花，越往下越多；每棵樹底下再落一圈
+  // 地上的落花，越往下越多；每叢樹底下再落一圈
   const onGrass = (x, y) => y > coastAt(x) + 4 && y < H - 6 && !inside(block, x, y)
   const petals = []
   const span = H - top
@@ -466,48 +551,20 @@ function drawGrove({ W, H, gap, block }) {
     if (noise(k, 73) > (0.3 + (0.7 * (y - top)) / span) ** 1.5 || !onGrass(x, y)) continue
     petals.push(petal(x, y, k, wide))
   }
-  petals.push(...petalsUnder(trees, onGrass, wide))
+  petals.push(...petalsUnder(clumps, onGrass, wide))
 
-  /*
-   * 白雲的影子：雲朵形狀的深綠色影子，從畫面左外側慢慢飄到右外側，一邊飄一邊上下起伏；只在岸上，不會飄到海上。
-   * 上岸的地方一朵大的、內容中間一朵、內容下方一朵小的，一左一右錯開。
-   * 飄過整段（兩個畫面寬加自己的寬度）的秒數照速度算，手機和桌機看起來一樣慢，大的飄得慢一點；
-   * left 是一開始（和減少動態效果時）的位置，delay 換算成剛好從那裡開始飄
-   */
-  const slots = [
-    // [上緣的高度, 一開始的水平位置（畫面寬的比例）, 大小]
-    [landTop + 16, 0.56, 1.6],
-    [block.top + (block.bottom - block.top) * 0.4, 0.1, 1],
-    [block.bottom + 16, 0.62, 0.5],
-  ]
-  const shadows = slots.map(([y, u, k], i) => {
-    const size = k * (0.9 + noise(i, 121) * 0.2)
-    const w = (wide ? 280 : 150) * size
-    const h = (w * 62) / 170
-    const duration = (2 * W + w) / ((wide ? 15 : 7) * (1.25 - size * 0.25))
-    const rise = (wide ? 36 : 18) * (0.6 + noise(i, 126) * 0.6)
-    // 連同上下起伏，影子都不能超出 <main> 底部
-    const top = Math.min(y, H - h - rise - 6)
-    return {
-      top: `${Math.round(top)}px`,
-      left: `${Math.round(u * W)}px`,
-      width: `${Math.round(w)}px`,
-      '--duration': `${Math.round(duration)}s`,
-      '--delay': `${-Math.round((duration * (W + w)) / (2 * W + w))}s`,
-      '--rise': `${Math.round(rise)}px`,
-      '--wander': `${(9 + noise(i, 127) * 7).toFixed(1)}s`,
-    }
-  })
-
+  // 常見問題展開時，內容下方的樹叢、落花跟著往下移；整叢照樹幹底部分，同一叢不會被拆到兩張畫布。H 和 block 量的是收合時的版面
+  const isBelow = (item) => item.y > block.bottom
+  // 照樹幹底部由上往下畫，前面（下面）那叢才會擋住後面的；同一叢裡的樹冠已經照由後往前排好
+  clumps.sort((a, b) => a.y - b.y)
+  const crowns = (list) => list.flatMap((c) => c.trees)
   return {
     top,
     landTop,
     grass: coast.fill,
-    coast: coast.line,
-    trees: trees.sort((a, b) => a.y - b.y),
-    petals,
-    tufts: tuftRows(landTop + 12, H - 30, wide ? 58 : 46, 500),
-    shadows,
+    trees: crowns(clumps.filter((c) => !isBelow(c))),
+    petals: petals.filter((p) => !isBelow(p)),
+    below: { trees: crowns(clumps.filter(isBelow)), petals: petals.filter(isBelow) },
     // 落花飄的範圍：從海岸到 <main> 底部，底下留一段讓花瓣淡出，不會落到頁面外面
     sakura: { top, bottom: H - 80 },
   }
@@ -518,12 +575,41 @@ let observer = null
 let timer = 0
 let lastKey = ''
 
+// 內容下方的東西往下移多少；直接改 CSS 變數，不經過 Vue 重新渲染
+function applyStretch(stretch) {
+  root.value.style.setProperty('--stretch', `${stretch}px`)
+}
+
 function update() {
-  const layout = measure()
+  const { stretch, ...layout } = measure()
+  applyStretch(stretch)
   const key = JSON.stringify(layout)
   if (key === lastKey) return
   lastKey = key
   scene.value = draw(layout)
+  if (riseByScript) nextTick(applyRise)
+}
+
+/*
+ * 跟著捲動的紙的下緣：支援捲動時間軸的瀏覽器直接用 CSS 做（見樣式的 hem-lag），不支援的才在這裡照捲動距離算：
+ * 下緣從畫面下緣進來到從上緣離開走到哪裡（0–1，跟 CSS 的 view() 一樣），換算成錯開多少（--hem-shift）。
+ * 減少動態效果時不做，紙的下緣停在原位
+ */
+const riseByScript =
+  !CSS.supports('animation-timeline: scroll()') && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+let riseFrame = 0
+const clamp01 = (t) => Math.min(1, Math.max(0, t))
+function applyRise() {
+  riseFrame = 0
+  const hem = root.value.querySelector('.journey__hem')
+  if (hem && scene.value) {
+    const { top, height } = hem.getBoundingClientRect()
+    const at = clamp01((window.innerHeight - top) / (window.innerHeight + height))
+    hem.firstElementChild.style.setProperty('--hem-shift', `${(scene.value.frame.hem.down * at).toFixed(1)}px`)
+  }
+}
+function onRiseScroll() {
+  if (!riseFrame) riseFrame = requestAnimationFrame(applyRise)
 }
 
 // 內容高度變動（字型載入、表單切換）時常常連續變好幾次，等停下來再重畫
@@ -534,14 +620,28 @@ function schedule() {
 
 onMounted(() => {
   update()
-  observer = new ResizeObserver(schedule)
-  observer.observe(root.value.parentElement)
+  const main = root.value.parentElement
+  // 常見問題展開收合的動畫每一格都跟上，內容下方的樹才會貼著內容一起移動；收合時的版面沒變，等一下的重畫會直接略過
+  observer = new ResizeObserver(() => {
+    applyStretch(stretchOf(main))
+    schedule()
+  })
+  observer.observe(main)
+  // 交通那一區被撐到一個畫面高時，展開不會改變 <main> 的大小，所以也直接盯著會展開的元素
+  main.querySelectorAll('[data-stretch]').forEach((el) => observer.observe(el))
   document.fonts?.ready.then(schedule)
+  if (riseByScript) {
+    window.addEventListener('scroll', onRiseScroll, { passive: true })
+    window.addEventListener('resize', onRiseScroll, { passive: true })
+  }
 })
 
 onBeforeUnmount(() => {
   observer?.disconnect()
   clearTimeout(timer)
+  window.removeEventListener('scroll', onRiseScroll)
+  window.removeEventListener('resize', onRiseScroll)
+  cancelAnimationFrame(riseFrame)
 })
 
 /*
@@ -578,79 +678,65 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
 <template>
   <div ref="root" class="journey" aria-hidden="true" :style="scene?.style">
     <template v-if="scene">
-      <!-- 海紋：深藍色的斜短線慢慢往左流；上下會被兩道海岸的草地蓋住 -->
+      <!-- 海紋：深藍色的斜短線慢慢往左流；上下會被紙和上岸的草地蓋住 -->
       <div class="journey__waves" :style="scene.waves">
         <div class="journey__waves-flow" :style="{ backgroundImage: wavesImage }"></div>
       </div>
 
-      <!-- 地面：首屏接下來的岸邊、海上的小島、上岸後的草地；最上面超出 <main> 頂端，疊在首屏底部 -->
+      <!--
+        地面：婚紗那一區的紙（上半截，下半截在 hem）、上岸後的草地。
+        紙的顆粒淡一點，才不會髒；紙不透明，蓋掉 <main> 背景的顆粒
+      -->
       <svg class="journey__land" :style="scene.canvas.style" :viewBox="scene.canvas.viewBox" preserveAspectRatio="none">
-        <g :transform="scene.shore.hills.transform">
-          <path class="fill-grass-deep" :d="scene.shore.hills.back" />
-          <path v-for="(d, i) in scene.shore.hills.backMarks" :key="`hb${i}`" class="brush-grass-mid" :d="d" />
-          <path class="fill-grass" :d="scene.shore.hills.front" />
-          <path v-for="(d, i) in scene.shore.hills.frontMarks" :key="`hf${i}`" class="brush-grass-light" :d="d" />
-        </g>
-
-        <path class="fill-grass" :d="scene.shore.grass" />
-        <path class="journey__edge" :d="scene.shore.coast" />
-
-        <!-- 小島：海面上的影子、浪花，沙灘描一道深色的線，中間是草地 -->
-        <path class="journey__sea-shadow" :d="scene.sea.island.shadow" />
-        <path class="journey__ripple" :d="scene.sea.island.foam" />
-        <path class="fill-sand" :d="scene.sea.island.beach" />
-        <path class="journey__edge" :d="scene.sea.island.beach" />
-        <path class="fill-grass" :d="scene.sea.island.grass" />
-        <path class="brush-grass-light" :d="scene.sea.island.marks" />
-        <path class="journey__tuft" :d="scene.sea.island.tufts" />
-
-        <path class="fill-grass" :d="scene.grove.grass" />
-        <path class="journey__edge" :d="scene.grove.coast" />
+        <path class="journey__paper" :d="scene.frame.fill" />
+        <path class="journey__grain journey__grain--soft" :d="scene.frame.fill" />
+        <path class="journey__grove" :d="scene.grove.grass" />
+        <path class="journey__grain" :d="scene.grove.grass" />
 
         <path v-for="(p, i) in scene.petals" :key="`p${i}`" :class="p.cls" :d="PETAL" :transform="p.transform" />
       </svg>
 
-      <!-- 白雲飄過草地的影子：外層往右飄、內層上下起伏，合起來是一道彎彎的路線；雲朵的形狀壓扁一點，像從斜上方照下來 -->
-      <div v-for="(style, i) in scene.grove.shadows" :key="`cs${i}`" class="journey__cloud-shade" :style="style">
-        <svg class="journey__cloud-shade-body" viewBox="20 6 170 90" preserveAspectRatio="none">
-          <path :d="scene.shapes.cloud" />
+      <svg class="journey__land journey__below" :style="scene.canvas.style" :viewBox="scene.canvas.viewBox" preserveAspectRatio="none">
+        <path v-for="(p, i) in scene.belowPetals" :key="`bp${i}`" :class="p.cls" :d="PETAL" :transform="p.transform" />
+      </svg>
+
+      <!--
+        樹叢照樹幹底部由上往下畫，前面（下面）的才會擋住後面的；同一叢的樹冠由後往前畫。
+        跟首屏的樹一樣，每一層畫完馬上鋪一次顆粒，疊在上面的那層會蓋掉下面的顆粒；白色的花瓣很淺，顆粒淡一點
+      -->
+      <svg
+        v-for="group in scene.trees"
+        :key="group.key"
+        class="journey__land"
+        :class="{ journey__below: group.below }"
+        :style="scene.canvas.style"
+        :viewBox="scene.canvas.viewBox"
+        preserveAspectRatio="none"
+      >
+        <g v-for="t in group.trees" :key="t.id" :class="`journey__tree journey__tree--${t.tone}`">
+          <template v-for="layer in t.layers" :key="layer.part">
+            <path :class="`journey__tree-${layer.part}`" :d="layer.d" :stroke-width="layer.width" />
+            <path
+              :class="[layer.width ? 'journey__grain-line' : 'journey__grain', { 'journey__grain--soft': layer.part === 'leaf' }]"
+              :d="layer.d"
+              :stroke-width="layer.width"
+            />
+          </template>
+          <path v-if="t.mark" class="journey__tree-mark" :d="t.mark" :stroke-width="t.markWidth" />
+        </g>
+      </svg>
+
+      <!--
+        婚紗那張紙的下緣（見 script 的 drawFrame）：蓋在海上，往下捲時比頁面慢一點
+      -->
+      <div class="journey__hem" :style="scene.frame.hem.box">
+        <svg class="journey__hem-sheet" :style="scene.frame.hem.sheet" :viewBox="scene.frame.hem.viewBox" preserveAspectRatio="none">
+          <path class="journey__paper" :d="scene.frame.hem.fill" />
+          <path class="journey__grain journey__grain--soft" :d="scene.frame.hem.fill" />
         </svg>
       </div>
 
-      <!-- 會左右擺的小草，夾在地面和樹之間 -->
-      <div class="journey__tufts">
-        <div v-for="(style, i) in scene.tufts" :key="i" class="journey__tuft-row" :style="style"></div>
-      </div>
-
-      <!-- 在岸邊散步的小貓，走在樹冠底下 -->
-      <WalkingCat class="journey__cat" :style="scene.shore.cat" />
-
-      <!-- 櫻花樹由上往下畫，下面的才會擋住上面的 -->
-      <svg class="journey__land" :style="scene.canvas.style" :viewBox="scene.canvas.viewBox" preserveAspectRatio="none">
-        <g v-for="(item, i) in scene.trees" :key="`t${i}`" :class="item.tone" :transform="item.transform">
-          <path v-for="([cls, d], j) in item.shapes" :key="j" :class="cls" :d="d" />
-        </g>
-      </svg>
-
-      <svg v-for="(style, i) in scene.sea.clouds" :key="`c${i}`" class="journey__cloud" :style="style" viewBox="0 0 220 170">
-        <ellipse class="journey__cloud-shadow" cx="112" cy="150" rx="74" ry="9" />
-        <g class="journey__cloud-hover">
-          <path class="fill-cloud" :d="scene.shapes.cloud" />
-        </g>
-      </svg>
-
-      <svg v-for="(style, i) in scene.sea.gulls" :key="`g${i}`" class="journey__gull" :style="style" viewBox="0 0 60 50">
-        <ellipse class="journey__gull-shadow" cx="30" cy="46" rx="10" ry="2.5" />
-        <g class="journey__gull-body">
-          <g class="journey__gull-wings">
-            <path class="gull-white" d="M29 16C24 8 14 5 3 8C11 9 19 13 25 19ZM31 16C36 8 46 5 57 8C49 9 41 13 35 19Z" />
-            <path class="gull-tip" d="M3 8C7 6.5 11 6 14 6.5C11 7.8 8.5 8.5 6.5 9.2ZM57 8C53 6.5 49 6 46 6.5C49 7.8 51.5 8.5 53.5 9.2Z" />
-          </g>
-          <ellipse class="gull-white" cx="30" cy="17" rx="5.5" ry="4" />
-          <circle class="gull-white" cx="35" cy="14.5" r="3.4" />
-          <path class="gull-beak" d="M38 14l4.5 1.2-4.5 1.2z" />
-        </g>
-      </svg>
+      <SeaGull v-for="(style, i) in scene.sea.gulls" :key="`g${i}`" class="journey__gull" :style="style" />
 
       <!-- 櫻花林裡紛飛的花瓣：外層負責被風吹著往右下落，中層左右飄，內層翻轉 -->
       <div v-for="(f, i) in scene.fallers" :key="`f${i}`" class="journey__faller" :style="f.style">
@@ -667,10 +753,6 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
 <style scoped>
 /* 鋪滿 <main>、在各區塊內容的後面；左右超出畫面的部分裁掉，上下不裁（山丘要疊到首屏底部） */
 .journey {
-  --crown: #f6b2c5;
-  --crown-light: #fbd3de;
-  --crown-deep: #ea98b0;
-
   position: absolute;
   z-index: 0;
   inset: 0;
@@ -685,44 +767,55 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
   width: 100%;
 }
 
-/* ---------- 草地 ---------- */
-/* 一排小草：橫向重複的細長條，底部是草根 */
-.journey__tufts {
+/* 交通內容下方的樹和落花：常見問題展開多高就往下移多少，畫布的下緣剛好落在 <main> 底部 */
+.journey__below {
+  transform: translateY(var(--stretch, 0px));
+}
+
+/* ---------- 噴槍畫的質感：漸層與顆粒都在 PaintDefs ---------- */
+/* 婚紗那一區的紙：平塗，再鋪一層淡顆粒 */
+.journey__paper {
+  fill: var(--scene-paper);
+}
+
+/*
+ * 紙的下緣：外層停在下緣原本的高度、1px 高，當捲動時間軸；裡面那張跟著捲動往下錯開（見 hem-lag）。
+ * 不支援捲動時間軸的瀏覽器由 JS 算 --hem-shift；減少動態效果時停在原位
+ */
+.journey__hem {
   position: absolute;
-  inset: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
 }
 
-/* 每叢三片草葉，兩叢一大一小 */
-.journey__tuft-row {
+.journey__hem-sheet {
   position: absolute;
-  right: -40px;
-  left: -40px;
-  height: 26px;
-  background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' width='760' height='26'><g fill='none' stroke='rgba(45,110,45,0.45)' stroke-width='2.2' stroke-linecap='round'><path d='M60 24q-1-9-7-15M63 24q0-11 2-19M66 24q2-8 8-12'/><path d='M450 24q-1-7-5-11M453 24q0-9 2-15M456 24q2-6 6-9'/></g></svg>")
-    0 0 / 760px 26px repeat-x;
-  transform-origin: 50% 100%;
-}
-
-/* 小島上不會動的小草，跟上面那排同色 */
-.journey__tuft {
-  fill: none;
-  stroke: rgba(45, 110, 45, 0.45);
-  stroke-width: 2.2;
-  stroke-linecap: round;
-}
-
-/* 雲影：跟草地深色塊同一種綠（半透明，落花從底下透出來） */
-.journey__cloud-shade {
-  position: absolute;
-}
-
-.journey__cloud-shade-body {
+  left: 0;
   display: block;
   width: 100%;
-  aspect-ratio: 170 / 62;
-  fill: rgba(40, 120, 30, 0.245);
+  transform: translateY(var(--hem-shift, 0px));
 }
 
+.journey__grove {
+  fill: url(#paint-shade-grove);
+}
+
+.journey__grain {
+  fill: url(#paint-grain);
+}
+
+/* 線條（樹枝）上的顆粒 */
+.journey__grain-line {
+  stroke: url(#paint-grain);
+}
+
+/* 很淺的顏色（奶油白的紙、白色花瓣）顆粒淡一點，才不會髒髒灰灰的 */
+.journey__grain--soft {
+  opacity: 0.45;
+}
+
+/* ---------- 草地 ---------- */
 .petal-0 {
   fill: #f4aac0;
 }
@@ -735,66 +828,62 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
   fill: #f8c8d6;
 }
 
-/* ---------- 櫻花樹：樹冠的底色、亮面、陰影（預設值在 .journey）由外層的 tone 換 ---------- */
-.tone-pale {
-  --crown: #f8c4d3;
-  --crown-light: #fde2ea;
-  --crown-deep: #efabbf;
+/* ---------- 樹（見 puffyTree.js）：顏色跟首屏的樹一樣在 SHADES 的 tree-*；樹枝細，用樹幹漸層的中間色 ---------- */
+.journey__tree--sakura .journey__tree-crown {
+  fill: url(#paint-shade-tree-sakura);
 }
 
-.tone-rose {
-  --crown: #f19fb7;
-  --crown-light: #f8c3d2;
-  --crown-deep: #e2849f;
+.journey__tree--sakura-pale .journey__tree-crown {
+  fill: url(#paint-shade-tree-sakura-pale);
 }
 
-.fill-crown {
-  fill: var(--crown);
+.journey__tree--sakura-rose .journey__tree-crown {
+  fill: url(#paint-shade-tree-sakura-rose);
 }
 
-.brush-crown-light {
-  fill: var(--crown-light);
+.journey__tree--mint .journey__tree-crown {
+  fill: url(#paint-shade-tree-mint);
 }
 
-.brush-crown-deep {
-  fill: var(--crown-deep);
+.journey__tree--green .journey__tree-crown {
+  fill: url(#paint-shade-tree-green);
 }
 
-.sakura-petal {
-  fill: #fff;
+.journey__tree--deep .journey__tree-crown {
+  fill: url(#paint-shade-tree-deep);
 }
 
-.sakura-center {
-  fill: #ea8aa5;
+.journey__tree-trunk {
+  fill: url(#paint-shade-trunk);
 }
 
-.tree-shadow {
-  fill: rgba(40, 90, 30, 0.2);
-}
-
-/* ---------- 海岸與小島 ---------- */
-/* 草地和海的交界描一道深色手繪線，跟導覽按鈕的框線同色 */
-.journey__edge {
+.journey__tree-branch,
+.journey__grain-line {
   fill: none;
-  stroke: #2b2523;
-  stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 
-.fill-sand {
-  fill: #f1dcaa;
+.journey__tree-branch {
+  stroke: #8b5a2e;
 }
 
-/* 小島落在海面上的影子 */
-.journey__sea-shadow {
-  fill: rgba(15, 60, 130, 0.22);
+/* 櫻花樹上的一小撮是白色花瓣；薄荷綠的樹跟首屏一樣是黃綠色的葉子 */
+.journey__tree-leaf {
+  fill: #fff;
 }
 
-.journey__ripple {
-  fill: rgba(255, 255, 255, 0.75);
+.journey__tree--mint .journey__tree-leaf {
+  fill: #cfe36a;
 }
 
+.journey__tree-mark {
+  fill: none;
+  stroke: #2b2523;
+  stroke-linecap: round;
+}
+
+/* ---------- 海 ---------- */
 /* 海紋：圖樣是參考圖的 0.6 倍（814×1160 → 488×696）；比畫面多一格寬，往左平移一格就能無縫循環 */
 .journey__waves {
   position: absolute;
@@ -809,49 +898,10 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
   background-size: 488.4px 696px;
 }
 
-/* ---------- 小貓、海鷗、雲 ---------- */
-/* 減少動態效果時，小貓停在路的中間附近 */
-.journey__cat {
-  transform: translateX(calc(var(--run) * 0.4));
-}
-
-.journey__cat,
-.journey__cloud,
+/* ---------- 海鷗、飄落的花瓣 ---------- */
 .journey__gull,
 .journey__faller {
   position: absolute;
-}
-
-.journey__cloud,
-.journey__gull {
-  overflow: visible;
-}
-
-.journey__cloud-shadow {
-  fill: rgba(15, 60, 130, 0.18);
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.gull-white {
-  fill: #fff;
-}
-
-.gull-tip {
-  fill: #8796a5;
-}
-
-.gull-beak {
-  fill: #f5a34a;
-}
-
-.journey__gull-shadow {
-  fill: rgba(15, 60, 130, 0.25);
-}
-
-.journey__gull-wings {
-  transform-box: view-box;
-  transform-origin: 30px 16px;
 }
 
 /* 飄落的花瓣：外層從落花範圍的頂端往下平移整段範圍的高度（--drop），就是從頂端落到底端 */
@@ -868,43 +918,21 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
 }
 
 @media (prefers-reduced-motion: no-preference) {
+  /* 紙的下緣：從畫面下緣進來（紙剛好佔滿畫面）到從上緣離開，從原位錯到往下 --hem-down，比頁面捲得慢一點 */
+  .journey__hem {
+    view-timeline: --journey-hem block;
+  }
+
+  @supports (animation-timeline: view()) {
+    .journey__hem-sheet {
+      animation: hem-lag linear both;
+      animation-timeline: --journey-hem;
+    }
+  }
+
   /* 每秒約 16px，跟原本的流速差不多 */
   .journey__waves-flow {
     animation: drift 30s linear infinite;
-  }
-
-  /* 小草以草根為軸左右輕輕擺 */
-  .journey__tuft-row {
-    animation: grass-sway 2.2s ease-in-out var(--delay) infinite alternate;
-  }
-
-  .journey__cloud-shade {
-    animation: shade-drift var(--duration) linear var(--delay) infinite;
-  }
-
-  .journey__cat {
-    animation: cat-stroll var(--duration) linear var(--delay) infinite;
-  }
-
-  .journey__cloud-shade-body {
-    animation: shade-wander var(--wander) ease-in-out var(--delay) infinite alternate;
-  }
-
-  .journey__cloud-hover {
-    animation: hover var(--duration) ease-in-out var(--delay) infinite alternate;
-  }
-
-  .journey__cloud-shadow {
-    animation: shadow-breathe var(--duration) ease-in-out var(--delay) infinite alternate;
-  }
-
-  /* 海鷗拍翅膀，同時慢慢左右滑翔 */
-  .journey__gull-wings {
-    animation: flap 0.7s ease-in-out var(--delay) infinite alternate;
-  }
-
-  .journey__gull-body {
-    animation: glide var(--drift) ease-in-out var(--delay) infinite alternate;
   }
 
   .journey__faller {
@@ -920,90 +948,18 @@ function drawFallers({ W, zone: { top, bottom }, count }) {
   }
 }
 
+@keyframes hem-lag {
+  from {
+    transform: none;
+  }
+  to {
+    transform: translateY(var(--hem-down));
+  }
+}
+
 @keyframes drift {
   to {
     transform: translateX(-488.4px);
-  }
-}
-
-@keyframes grass-sway {
-  from {
-    transform: skewX(-26deg);
-  }
-  to {
-    transform: skewX(20deg);
-  }
-}
-
-/* 從畫面左外側（多扣自己的寬度）飄到右外側，起點與終點都在畫面外，循環時不會看到影子瞬間跳回去 */
-/* 上下起伏，順便微微變大變小，像雲在空中慢慢變形 */
-@keyframes shade-wander {
-  from {
-    transform: translateY(0) scale(0.95);
-  }
-  to {
-    transform: translateY(var(--rise)) scale(1.05);
-  }
-}
-
-@keyframes shade-drift {
-  from {
-    transform: translateX(calc(-100vw - 100%));
-  }
-  to {
-    transform: translateX(100vw);
-  }
-}
-
-/* 小貓走到右邊盡頭，原地轉身走回左邊，再轉身 */
-@keyframes cat-stroll {
-  0% {
-    transform: translateX(0) scaleX(1);
-  }
-  49% {
-    transform: translateX(var(--run)) scaleX(1);
-  }
-  50% {
-    transform: translateX(var(--run)) scaleX(-1);
-  }
-  99% {
-    transform: translateX(0) scaleX(-1);
-  }
-  100% {
-    transform: translateX(0) scaleX(1);
-  }
-}
-
-@keyframes hover {
-  from {
-    transform: translateY(-6px);
-  }
-  to {
-    transform: translateY(4px);
-  }
-}
-
-@keyframes shadow-breathe {
-  from {
-    transform: scale(0.86);
-  }
-  to {
-    transform: scale(1.04);
-  }
-}
-
-@keyframes flap {
-  to {
-    transform: scaleY(0.35);
-  }
-}
-
-@keyframes glide {
-  from {
-    transform: translate(-6px, 2px);
-  }
-  to {
-    transform: translate(6px, -2px);
   }
 }
 

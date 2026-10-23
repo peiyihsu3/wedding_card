@@ -1,8 +1,12 @@
 <script setup>
+import CrayonFrame from './CrayonFrame.vue'
+
 const props = defineProps({
   min: { type: Number, default: 0 },
   max: { type: Number, default: 10 },
   labelledby: { type: String, default: '' },
+  // 蠟筆框的種子，並排的幾個歪法才不會一模一樣
+  seed: { type: Number, default: 1 },
 })
 
 const model = defineModel({ type: Number, required: true })
@@ -14,7 +18,9 @@ function step(delta) {
 </script>
 
 <template>
+  <!-- 跟選項同一套蠟筆框 -->
   <div class="stepper" role="group" :aria-labelledby="labelledby">
+    <CrayonFrame :seed="seed" :radius="14" />
     <button
       type="button"
       class="stepper__btn"
@@ -39,21 +45,23 @@ function step(delta) {
 
 <style scoped>
 .stepper {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   height: var(--control-height);
-  border: 1px solid var(--milk-tea-deep);
-  border-radius: 999px;
-  background: #fff;
-  overflow: hidden;
+  padding: 0 6px;
 }
 
+/* 框的邊緣是抖過的線，按下時的底色只墊一個圓，才不會碰到框線 */
 .stepper__btn {
-  flex: 0 0 48px;
-  height: 100%;
+  flex: none;
+  width: 36px;
+  height: 36px;
   border: 0;
+  border-radius: 50%;
   background: transparent;
-  color: var(--rose-gold);
+  color: var(--accent);
   font-size: 22px;
   line-height: 1;
   cursor: pointer;
@@ -62,12 +70,12 @@ function step(delta) {
 
 @media (hover: hover) {
   .stepper__btn:hover:not(:disabled) {
-    background: var(--rose-gold-soft);
+    background: var(--accent-soft);
   }
 }
 
 .stepper__btn:active:not(:disabled) {
-  background: var(--rose-gold-soft);
+  background: var(--accent-soft);
 }
 
 .stepper__btn:disabled {
